@@ -149,6 +149,8 @@
         form.setAttribute('aria-busy', busy ? 'true' : 'false');
       };
 
+      const formTarget = (form) => form.getAttribute('action') || window.location.href;
+
       const updateProgress = (container, label, percent = null, state = 'active') => {
         const bar = container.querySelector('.progress-bar');
         const progress = container.querySelector('[role="progressbar"]');
@@ -179,7 +181,7 @@
         updateProgress(exportProgress, 'Export wird vorbereitet ...');
 
         const request = new XMLHttpRequest();
-        request.open('POST', exportForm.action || window.location.href);
+        request.open('POST', formTarget(exportForm));
         request.responseType = 'blob';
         request.onprogress = (progressEvent) => {
           if (!progressEvent.lengthComputable) return;
@@ -220,7 +222,7 @@
         updateProgress(importProgress, 'Archiv wird hochgeladen ...', 0);
 
         const request = new XMLHttpRequest();
-        request.open('POST', importForm.action || window.location.href);
+        request.open('POST', formTarget(importForm));
         request.upload.onprogress = (progressEvent) => {
           if (!progressEvent.lengthComputable) return;
           const percent = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100));
