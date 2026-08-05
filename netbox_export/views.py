@@ -48,6 +48,7 @@ class DashboardView(UserPassesTestMixin, View):
                 form.cleaned_data["scope_type"],
                 scope.pk,
                 max_objects=int(get_plugin_config("netbox_export", "max_objects", 50000)),
+                query_batch_size=int(get_plugin_config("netbox_export", "query_batch_size", 500)),
                 signing_key=get_plugin_config("netbox_export", "archive_signing_key", ""),
             )
         except ExportImportError as exc:

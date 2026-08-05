@@ -8,6 +8,7 @@ import posixpath
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import BinaryIO
 
 from django.core.serializers.json import DjangoJSONEncoder
@@ -18,6 +19,19 @@ FORMAT_NAME = "netbox-export"
 FORMAT_VERSION = 1
 MANIFEST_NAME = "manifest.json"
 OBJECTS_NAME = "objects.ndjson"
+PRECOMPRESSED_SUFFIXES = {
+    ".7z",
+    ".avi",
+    ".gz",
+    ".jpeg",
+    ".jpg",
+    ".mp3",
+    ".mp4",
+    ".pdf",
+    ".png",
+    ".webp",
+    ".zip",
+}
 
 
 def _json_bytes(value) -> bytes:
@@ -59,11 +73,21 @@ def build_archive(manifest: dict, records: Iterable[dict], assets: dict[str, byt
         manifest["signature"] = _signature(manifest, signing_key)
 
     output = io.BytesIO()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
         archive.writestr(MANIFEST_NAME, _json_bytes(manifest))
         archive.writestr(OBJECTS_NAME, object_data)
         for path, content in sorted(assets.items()):
-            archive.writestr(_safe_member_name(path), content)
+            compression = (
+                zipfile.ZIP_STORED
+                if PurePosixPath(path).suffix.lower() in PRECOMPRESSED_SUFFIXES
+                else zipfile.ZIP_DEFLATED
+            )
+            archive.writestr(
+                _safe_member_name(path),
+                content,
+                compress_type=compression,
+                compresslevel=None if compression == zipfile.ZIP_STORED else 1,
+            )
     return output.getvalue()
 
 

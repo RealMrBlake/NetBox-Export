@@ -42,6 +42,7 @@ PLUGINS_CONFIG = {
     "netbox_export": {
         "max_objects": 50000,
         "max_archive_size_mb": 250,
+        "query_batch_size": 500,
         # Auf beiden Instanzen identisch setzen, um Archive zu signieren.
         "archive_signing_key": "eine-lange-zufaellige-geheime-zeichenfolge",
     },
@@ -99,6 +100,10 @@ Import werden vorhandene Objekte über ihre eindeutigen Fachschlüssel erkannt.
   werden.
 - Große Exporte werden synchron verarbeitet. `max_objects` begrenzt Laufzeit und
   Speicherverbrauch.
+- `query_batch_size` steuert die Größe gebündelter Datenbankabfragen. Der
+  Standardwert `500` ist für typische PostgreSQL-Installationen geeignet;
+  Werte zwischen `250` und `1000` erlauben eine Anpassung an Arbeitsspeicher und
+  Datenbankleistung.
 
 ## Tests
 

@@ -87,16 +87,23 @@ def external_identity(obj) -> dict:
     return {"model": label, "lookup": {"pk": encode_scalar(obj.pk)}}
 
 
-def _reference_spec(obj, exported_keys: set[str]):
-    if object_key(obj) in exported_keys:
-        return {"ref": object_key(obj)}
-    return {"external": external_identity(obj)}
+def _reference_for_pk(model, pk, exported_keys: set[str]):
+    key = f"{model._meta.label_lower}:{pk}"
+    if key in exported_keys:
+        return {"ref": key}
+    try:
+        target = model._default_manager.get(pk=pk)
+    except model.DoesNotExist:
+        return None
+    return {"external": external_identity(target)}
 
 
-def _encode_custom_field_data(obj, value: dict, exported_keys: set[str]):
-    from extras.models import CustomField
+def _encode_custom_field_data(obj, value: dict, exported_keys: set[str], custom_fields=None):
+    if custom_fields is None:
+        from extras.models import CustomField
 
-    definitions = {field.name: field for field in CustomField.objects.get_for_model(type(obj))}
+        custom_fields = CustomField.objects.get_for_model(type(obj))
+    definitions = {field.name: field for field in custom_fields}
     encoded = {}
     for name, raw_value in value.items():
         custom_field = definitions.get(name)
@@ -110,21 +117,17 @@ def _encode_custom_field_data(obj, value: dict, exported_keys: set[str]):
             continue
         target_model = custom_field.related_object_type.model_class()
         if custom_field.type == "object":
-            try:
-                target = target_model._default_manager.get(pk=raw_value)
-            except target_model.DoesNotExist:
-                encoded[name] = None
-            else:
-                encoded[name] = {"$type": "object_ref", "value": _reference_spec(target, exported_keys)}
+            reference = _reference_for_pk(target_model, raw_value, exported_keys)
+            encoded[name] = {"$type": "object_ref", "value": reference} if reference else None
         else:
-            targets = {str(item.pk): item for item in target_model._default_manager.filter(pk__in=raw_value)}
+            references = [
+                reference
+                for pk in raw_value
+                if (reference := _reference_for_pk(target_model, pk, exported_keys)) is not None
+            ]
             encoded[name] = {
                 "$type": "multiobject_ref",
-                "value": [
-                    _reference_spec(targets[str(pk)], exported_keys)
-                    for pk in raw_value
-                    if str(pk) in targets
-                ],
+                "value": references,
             }
     return encoded
 
@@ -138,23 +141,20 @@ def _encode_custom_field_default(custom_field, value, exported_keys: set[str]):
         return encode_scalar(value)
     target_model = custom_field.related_object_type.model_class()
     if custom_field.type == "object":
-        try:
-            target = target_model._default_manager.get(pk=value)
-        except target_model.DoesNotExist:
-            return None
-        return {"$type": "object_ref", "value": _reference_spec(target, exported_keys)}
-    targets = {str(item.pk): item for item in target_model._default_manager.filter(pk__in=value)}
+        reference = _reference_for_pk(target_model, value, exported_keys)
+        return {"$type": "object_ref", "value": reference} if reference else None
+    references = [
+        reference
+        for pk in value
+        if (reference := _reference_for_pk(target_model, pk, exported_keys)) is not None
+    ]
     return {
         "$type": "multiobject_ref",
-        "value": [
-            _reference_spec(targets[str(pk)], exported_keys)
-            for pk in value
-            if str(pk) in targets
-        ],
+        "value": references,
     }
 
 
-def serialize_object(obj, exported_keys: set[str], assets: dict[str, bytes]) -> dict:
+def serialize_object(obj, exported_keys: set[str], assets: dict[str, bytes], custom_fields=None) -> dict:
     record_id = object_key(obj)
     gfk_fields = generic_foreign_keys(type(obj))
     gfk_storage = {name for field in gfk_fields for name in (field.ct_field, field.fk_field)}
@@ -191,7 +191,7 @@ def serialize_object(obj, exported_keys: set[str], assets: dict[str, bytes]) -> 
             continue
         value = field.value_from_object(obj)
         if field.name == "custom_field_data" and isinstance(value, dict):
-            scalars[field.name] = _encode_custom_field_data(obj, value, exported_keys)
+            scalars[field.name] = _encode_custom_field_data(obj, value, exported_keys, custom_fields)
         elif obj._meta.label_lower == "extras.customfield" and field.name == "default":
             scalars[field.name] = _encode_custom_field_default(obj, value, exported_keys)
         else:
