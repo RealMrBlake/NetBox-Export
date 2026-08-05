@@ -23,7 +23,7 @@ def tenant_record():
     }
 
 
-def test_unresolved_tenant_blocks_initial_save_when_netbox_utilities_requires_it():
+def test_unresolved_tenant_always_blocks_initial_save():
     resolver = ReferenceResolver({}, [], lambda label: None)
 
     kwargs, unresolved, unresolved_values, missing_required = _field_kwargs(
@@ -39,7 +39,7 @@ def test_unresolved_tenant_blocks_initial_save_when_netbox_utilities_requires_it
     assert missing_required == []
 
 
-def test_unresolved_optional_tenant_remains_deferred_without_requirement():
+def test_unresolved_tenant_also_blocks_when_policy_detection_is_unavailable():
     resolver = ReferenceResolver({}, [], lambda label: None)
 
     kwargs, unresolved, unresolved_values, missing_required = _field_kwargs(
@@ -49,7 +49,7 @@ def test_unresolved_optional_tenant_remains_deferred_without_requirement():
         tenant_required=False,
     )
 
-    assert kwargs == {}
-    assert unresolved == [("tenant", {"ref": "tenancy.tenant:23"})]
+    assert kwargs is None
+    assert unresolved == []
     assert unresolved_values == []
     assert missing_required == []

@@ -113,7 +113,9 @@ Der Exportgraph berücksichtigt installierte, mandantenbezogene Modelle und
 Dateien aus NetBox-SLM, Netbox-DokiWiki und NetBox-VM-Import. Private oder
 temporäre Plugin-Modelle werden nicht exportiert. Die von Netbox-Utilities
 erzwungene Mandantenpflicht wird beim Import berücksichtigt: Das Zielobjekt wird
-erst gespeichert, nachdem sein Mandant importiert und zugeordnet wurde.
+erst gespeichert, nachdem sein Mandant importiert und zugeordnet wurde. Ist kein
+Mandant auflösbar, wird automatisch ein vorhandener Mandant `Auto-Import`
+verwendet oder neu angelegt. Der Importbericht weist darauf hin.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei

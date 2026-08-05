@@ -17,8 +17,8 @@ from .archive import ParsedArchive
 from .codec import SKIP_FIELD_NAMES, decode_scalar, generic_foreign_keys
 from .exceptions import ArchiveValidationError, ExportImportError, ImportConflictError
 from .plugin_compat import (
-    netbox_utilities_tenant_required,
-    relation_required_before_save,
+    PluginCompatibility,
+    is_tenant_relation,
 )
 from .references import MISSING_REFERENCE, ReferenceResolver
 
@@ -244,17 +244,17 @@ def _field_kwargs(model, record, resolver, *, tenant_required: bool):
         field = valid_fields.get(name)
         if not isinstance(field, (models.ForeignKey, models.OneToOneField)):
             continue
-        required_before_save = relation_required_before_save(field, tenant_required=tenant_required)
+        tenant_relation = is_tenant_relation(field)
         value, available = resolver.resolve(spec)
         if available:
             if value is MISSING_REFERENCE:
-                if required_before_save or (not field.null and not field.has_default()):
+                if not field.null and not field.has_default():
                     missing_required.append(name)
-            elif value is None and required_before_save:
-                missing_required.append(name)
+            elif value is None and tenant_relation and tenant_required:
+                continue
             else:
                 kwargs[name] = value
-        elif field.null and not required_before_save:
+        elif field.null and not tenant_relation:
             unresolved.append((name, spec))
         else:
             return None, [], [], []
@@ -352,7 +352,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
     report = ImportReport(dry_run=dry_run, warnings=list(parsed.warnings))
     resolved = {}
     resolver = ReferenceResolver(resolved, report.warnings, _model_for)
-    tenant_required = netbox_utilities_tenant_required()
+    compatibility = PluginCompatibility(report.warnings, dry_run=dry_run)
     deferred_relations = []
     deferred_generic = []
     deferred_values = []
@@ -367,7 +367,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 for record_id, record in list(pending.items()):
                     model = _model_for(record["model"])
                     kwargs, unresolved, unresolved_value_fields, missing_required = _field_kwargs(
-                        model, record, resolver, tenant_required=tenant_required
+                        model, record, resolver, tenant_required=compatibility.tenant_required
                     )
                     if kwargs is None:
                         continue
@@ -397,7 +397,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                             progressed = True
                             continue
                         _set_files(obj, record, parsed.assets, saved_files, dry_run=dry_run)
-                        obj.save()
+                        compatibility.save(obj)
                         action = "updated" if existing is not None else "created"
                         writable.add(record_id)
                         deferred_relations.extend((record_id, name, spec) for name, spec in unresolved)
@@ -428,7 +428,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                     continue
                 obj = resolved[record_id]
                 setattr(obj, name, value)
-                obj.save(update_fields=[name])
+                compatibility.save(obj, update_fields=[name])
 
             for record_id, name, spec in deferred_generic:
                 if record_id not in writable:
@@ -441,7 +441,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 obj = resolved[record_id]
                 setattr(obj, name, value)
                 field = next(field for field in generic_foreign_keys(type(obj)) if field.name == name)
-                obj.save(update_fields=[field.ct_field, field.fk_field])
+                compatibility.save(obj, update_fields=[field.ct_field, field.fk_field])
 
             for record_id, name, encoded in deferred_values:
                 if record_id not in writable:
@@ -451,7 +451,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                     raise ArchiveValidationError(f"Custom-Field-Referenz {name} für {record_id} fehlt.")
                 obj = resolved[record_id]
                 setattr(obj, name, value)
-                obj.save(update_fields=[name])
+                compatibility.save(obj, update_fields=[name])
 
             for record_id, record in records.items():
                 if record_id in writable:

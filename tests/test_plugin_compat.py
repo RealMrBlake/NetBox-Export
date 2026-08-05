@@ -1,26 +1,133 @@
 from types import SimpleNamespace
 
-from netbox_export.services.plugin_compat import relation_required_before_save
+from django.core.exceptions import FieldDoesNotExist, ValidationError
+
+from netbox_export.services.plugin_compat import (
+    MISSING_TENANT_MESSAGE,
+    PluginCompatibility,
+    is_tenant_relation,
+)
 
 
-def relation_field(name, related_label):
+def relation_field(name="tenant", related_label="tenancy.tenant"):
     related_model = SimpleNamespace(_meta=SimpleNamespace(label_lower=related_label))
     return SimpleNamespace(name=name, remote_field=SimpleNamespace(model=related_model))
 
 
-def test_tenant_relation_is_resolved_before_initial_save_when_required():
-    field = relation_field("tenant", "tenancy.tenant")
+class FakeQuerySet:
+    def __init__(self, result=None, exists=False):
+        self.result = result
+        self._exists = exists
 
-    assert relation_required_before_save(field, tenant_required=True) is True
+    def order_by(self, *fields):
+        return self
+
+    def first(self):
+        return self.result
+
+    def exists(self):
+        return self._exists
 
 
-def test_tenant_relation_can_still_be_deferred_when_policy_is_disabled():
-    field = relation_field("tenant", "tenancy.tenant")
+class FakeTenantManager:
+    def __init__(self, existing=None):
+        self.existing = existing
+        self.created = []
 
-    assert relation_required_before_save(field, tenant_required=False) is False
+    def filter(self, **lookup):
+        if "name" in lookup:
+            return FakeQuerySet(self.existing)
+        return FakeQuerySet(exists=False)
+
+    def create(self, **values):
+        tenant = SimpleNamespace(pk=42, **values)
+        self.created.append(tenant)
+        return tenant
 
 
-def test_unrelated_relation_is_not_affected_by_tenant_policy():
-    field = relation_field("site", "dcim.site")
+class FakeTenantModel:
+    _default_manager = FakeTenantManager()
 
-    assert relation_required_before_save(field, tenant_required=True) is False
+
+class FakeMeta:
+    def get_field(self, name):
+        if name != "tenant":
+            raise FieldDoesNotExist(name)
+        return relation_field()
+
+
+class TenantRequiredObject:
+    _meta = FakeMeta()
+
+    def __init__(self):
+        self.tenant_id = None
+        self.save_calls = 0
+
+    @property
+    def tenant(self):
+        return None
+
+    @tenant.setter
+    def tenant(self, value):
+        self.tenant_id = value.pk
+
+    def save(self, **kwargs):
+        self.save_calls += 1
+        if self.tenant_id is None:
+            raise ValidationError(MISSING_TENANT_MESSAGE)
+
+
+def test_identifies_tenant_relation():
+    assert is_tenant_relation(relation_field()) is True
+    assert is_tenant_relation(relation_field("site", "dcim.site")) is False
+
+
+def test_creates_and_assigns_auto_import_tenant_when_policy_is_active():
+    manager = FakeTenantManager()
+    tenant_model = type("TenantModel", (), {"_default_manager": manager})
+    warnings = []
+    compatibility = PluginCompatibility(
+        warnings,
+        dry_run=False,
+        tenant_required=True,
+        tenant_model_loader=lambda: tenant_model,
+    )
+    obj = TenantRequiredObject()
+
+    compatibility.save(obj)
+
+    assert obj.tenant_id == 42
+    assert obj.save_calls == 1
+    assert len(manager.created) == 1
+    assert warnings == [
+        (
+            'Der Mandant "Auto-Import" wurde automatisch erstellt und Objekten ohne '
+            'auflösbaren Mandanten zugewiesen.'
+        )
+    ]
+
+
+def test_validation_error_forces_fallback_for_older_plugin_versions():
+    existing = SimpleNamespace(pk=7, name="Auto-Import", slug="auto-import")
+    manager = FakeTenantManager(existing=existing)
+    tenant_model = type("TenantModel", (), {"_default_manager": manager})
+    warnings = []
+    compatibility = PluginCompatibility(
+        warnings,
+        dry_run=False,
+        tenant_required=False,
+        tenant_model_loader=lambda: tenant_model,
+    )
+    obj = TenantRequiredObject()
+
+    compatibility.save(obj)
+
+    assert obj.tenant_id == 7
+    assert obj.save_calls == 2
+    assert manager.created == []
+    assert warnings == [
+        (
+            'Der vorhandene Mandant "Auto-Import" wurde automatisch für Objekte ohne '
+            'auflösbaren Mandanten ausgewählt.'
+        )
+    ]
