@@ -125,6 +125,10 @@ Zielzuordnung wird dabei atomar gelöst und als Warnung protokolliert.
 Gespeicherte Importzuordnungen werden bei Wiederholungsimporten gegen den
 aktuellen Fachschlüssel geprüft. Existiert das Objekt bereits unter diesem
 Schlüssel, wird die Zuordnung korrigiert, statt ein Duplikat anzulegen.
+Bei neuen NetBox-Modulen wird die automatische Komponentenreplikation
+deaktiviert. Ports, Interfaces und Bays werden stattdessen ausschließlich aus
+den Archivdatensätzen angelegt beziehungsweise vorhandenen Komponenten
+zugeordnet.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei

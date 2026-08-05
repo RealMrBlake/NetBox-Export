@@ -41,7 +41,7 @@ EXPLICIT_IDENTITIES = {
     "dcim.frontport": ("device", "name"),
     "dcim.rearport": ("device", "name"),
     "dcim.devicebay": ("device", "name"),
-    "dcim.modulebay": ("device", "name"),
+    "dcim.modulebay": ("device", "module", "name"),
     "dcim.inventoryitem": ("device", "parent", "name"),
     "ipam.prefix": ("vrf", "prefix"),
     "ipam.ipaddress": ("vrf", "address"),
@@ -411,6 +411,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                             progressed = True
                             continue
                         _set_files(obj, record, parsed.assets, saved_files, dry_run=dry_run)
+                        compatibility.prepare_initial_save(obj, is_new=existing is None)
                         compatibility.save(obj)
                         action = "updated" if existing is not None else "created"
                         writable.add(record_id)

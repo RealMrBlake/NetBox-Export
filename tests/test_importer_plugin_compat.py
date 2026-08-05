@@ -5,7 +5,11 @@ import pytest
 from django.db import connection, models
 
 from netbox_export.services import importer as importer_module
-from netbox_export.services.importer import _field_kwargs, _find_existing
+from netbox_export.services.importer import (
+    _field_kwargs,
+    _find_existing,
+    _identity_lookup,
+)
 from netbox_export.services.plugin_compat import PluginCompatibility
 from netbox_export.services.references import ReferenceResolver
 
@@ -73,6 +77,27 @@ class RearPort(models.Model):
         ]
 
 
+class Module(models.Model):
+    class Meta:
+        app_label = "dcim"
+
+
+class ModuleBay(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    module = models.ForeignKey(Module, on_delete=models.CASCADE)
+    name = models.CharField(max_length=64)
+
+    class Meta:
+        app_label = "dcim"
+
+
+class ModularRearPort(models.Model):
+    module = models.ForeignKey(Module, on_delete=models.SET_NULL, null=True)
+
+    class Meta:
+        app_label = "compat_tests"
+
+
 def tenant_record():
     return {
         "fields": {},
@@ -130,6 +155,50 @@ def test_unresolved_relation_in_check_constraint_blocks_initial_save():
     assert unresolved == []
     assert unresolved_values == []
     assert missing_required == []
+
+
+def test_modular_component_waits_for_module_before_initial_save():
+    resolver = ReferenceResolver({}, [], lambda label: None)
+    record = {
+        "fields": {},
+        "relations": {"module": {"ref": "dcim.module:12"}},
+    }
+
+    kwargs, unresolved, unresolved_values, missing_required = _field_kwargs(
+        ModularRearPort,
+        record,
+        resolver,
+        tenant_required=False,
+    )
+
+    assert kwargs is None
+    assert unresolved == []
+    assert unresolved_values == []
+    assert missing_required == []
+
+
+def test_module_bay_identity_includes_owning_module():
+    device = Device(pk=210)
+    module = Module(pk=12)
+    resolver = ReferenceResolver(
+        {
+            "dcim.device:210": device,
+            "dcim.module:12": module,
+        },
+        [],
+        lambda label: None,
+    )
+    record = {
+        "fields": {"name": "3-LC"},
+        "relations": {
+            "device": {"ref": "dcim.device:210"},
+            "module": {"ref": "dcim.module:12"},
+        },
+    }
+
+    lookup = _identity_lookup(ModuleBay, record, resolver)
+
+    assert lookup == {"device": device, "module": module, "name": "3-LC"}
 
 
 def test_resolved_nullable_unique_relation_is_deferred():

@@ -7,6 +7,7 @@ from netbox_export.services.plugin_compat import (
     MISSING_TENANT_MESSAGE,
     PluginCompatibility,
     check_constraint_field_names,
+    is_module_relation,
     is_tenant_relation,
     relation_required_before_save,
     relation_should_be_deferred,
@@ -84,6 +85,27 @@ class TenantRequiredObject:
 def test_identifies_tenant_relation():
     assert is_tenant_relation(relation_field()) is True
     assert is_tenant_relation(relation_field("site", "dcim.site")) is False
+
+
+def test_identifies_module_component_relation():
+    assert is_module_relation(relation_field("module", "dcim.module")) is True
+    assert is_module_relation(relation_field("device", "dcim.device")) is False
+
+
+def test_new_module_disables_automatic_component_replication():
+    module = SimpleNamespace(_meta=SimpleNamespace(label_lower="dcim.module"))
+
+    PluginCompatibility.prepare_initial_save(module, is_new=True)
+
+    assert module._disable_replication is True
+
+
+def test_existing_module_keeps_normal_save_behavior():
+    module = SimpleNamespace(_meta=SimpleNamespace(label_lower="dcim.module"))
+
+    PluginCompatibility.prepare_initial_save(module, is_new=False)
+
+    assert not hasattr(module, "_disable_replication")
 
 
 def test_identifies_relations_used_by_check_constraint():

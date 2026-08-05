@@ -27,6 +27,13 @@ def is_tenant_relation(field) -> bool:
     return getattr(getattr(related_model, "_meta", None), "label_lower", None) == "tenancy.tenant"
 
 
+def is_module_relation(field) -> bool:
+    if field.name != "module":
+        return False
+    related_model = getattr(field.remote_field, "model", None)
+    return getattr(getattr(related_model, "_meta", None), "label_lower", None) == "dcim.module"
+
+
 def _condition_field_names(condition):
     for child in getattr(condition, "children", ()):
         if isinstance(child, tuple):
@@ -47,8 +54,10 @@ def check_constraint_field_names(model) -> frozenset[str]:
 
 
 def relation_required_before_save(field) -> bool:
-    return is_tenant_relation(field) or field.name in check_constraint_field_names(
-        getattr(field, "model", None)
+    return (
+        is_tenant_relation(field)
+        or is_module_relation(field)
+        or field.name in check_constraint_field_names(getattr(field, "model", None))
     )
 
 
@@ -135,6 +144,13 @@ class PluginCompatibility:
             if not self._is_missing_tenant_error(exc) or not self._assign_fallback_tenant(obj, force=True):
                 raise
             return obj.save(**kwargs)
+
+    @staticmethod
+    def prepare_initial_save(obj, *, is_new: bool):
+        if is_new and obj._meta.label_lower == "dcim.module":
+            # Module.save() otherwise replicates ModuleType components which are
+            # imported explicitly from the archive and may already exist.
+            obj._disable_replication = True
 
     def release_unique_relation(self, obj, field_name: str, value):
         field = obj._meta.get_field(field_name)
