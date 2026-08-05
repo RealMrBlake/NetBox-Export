@@ -25,7 +25,10 @@ Das Plugin muss auf beiden NetBox-Instanzen installiert sein.
 cd /opt/netbox
 source venv/bin/activate
 pip install --upgrade --force-reinstall \
-  "git+https://git.mrblake.cc/MrBlake/Netbox-Utilities.git@main"
+  "git+https://git.mrblake.cc/MrBlake/NetBox-Export.git@main"
+
+# Prüfen, ob das Modul im NetBox-venv verfügbar ist
+python -c "import netbox_export; print(netbox_export.__file__)"
 ```
 
 In `configuration.py` ergänzen:
@@ -52,6 +55,18 @@ cd /opt/netbox/netbox
 python manage.py migrate netbox_export
 python manage.py collectstatic --no-input
 sudo systemctl restart netbox netbox-rq
+```
+
+Falls `ModuleNotFoundError: No module named 'netbox_export'` erscheint, wurde
+das Paket nicht in `/opt/netbox/venv` installiert. In diesem Fall den obigen
+Installationsblock erneut ausführen und darauf achten, dass
+`/opt/netbox/venv/bin/python` verwendet wird:
+
+```bash
+/opt/netbox/venv/bin/python -m pip install --upgrade --force-reinstall \
+  "git+https://git.mrblake.cc/MrBlake/NetBox-Export.git@main"
+/opt/netbox/venv/bin/python -c \
+  "import netbox_export; print(netbox_export.__file__)"
 ```
 
 Bei einer Docker-Installation wird das Paket in das eigene NetBox-Image
@@ -90,4 +105,3 @@ Import werden vorhandene Objekte über ihre eindeutigen Fachschlüssel erkannt.
 ```bash
 python -m pytest
 ```
-
