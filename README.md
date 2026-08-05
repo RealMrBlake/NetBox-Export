@@ -92,8 +92,10 @@ Import werden vorhandene Objekte über ihre eindeutigen Fachschlüssel erkannt.
 ## Verhalten und Grenzen
 
 - Quelle und Ziel müssen NetBox 4.6.x und dieselben Plugins/Modelle verwenden.
-- Benutzerkonten und Berechtigungen werden nicht exportiert. Referenzen auf
-  Benutzer oder Gruppen müssen auf dem Ziel bereits eindeutig vorhanden sein.
+- Benutzerkonten und Berechtigungen werden nicht exportiert. Fehlende oder
+  nicht eindeutige Referenzen auf Benutzer und Gruppen werden ausgelassen und
+  nach dem Import als Warnung angezeigt. Benötigt ein neuer Datensatz zwingend
+  eine solche Referenz, wird nur dieser Datensatz übersprungen.
 - Der Import erstellt und aktualisiert Objekte. Zielobjekte, die im Archiv nicht
   vorkommen, werden bewusst nicht gelöscht.
 - Fehlende Bilddateien werden im Archiv vermerkt, können aber nicht rekonstruiert

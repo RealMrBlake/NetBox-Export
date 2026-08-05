@@ -16,6 +16,7 @@ from netbox_export.models import ImportedObjectMapping
 from .archive import ParsedArchive
 from .codec import SKIP_FIELD_NAMES, decode_scalar, generic_foreign_keys
 from .exceptions import ArchiveValidationError, ExportImportError, ImportConflictError
+from .references import MISSING_REFERENCE, ReferenceResolver
 
 EXPLICIT_IDENTITIES = {
     "tenancy.tenantgroup": ("slug",),
@@ -76,48 +77,27 @@ def _model_for(label: str):
     return model
 
 
-def _external_object(spec: dict):
-    model = _model_for(spec["model"])
-    lookup = {key: decode_scalar(value) for key, value in spec.get("lookup", {}).items()}
-    try:
-        return model._default_manager.get(**lookup)
-    except model.DoesNotExist as exc:
-        raise ArchiveValidationError(
-            f"Externe Referenz fehlt: {spec['model']} mit {lookup}."
-        ) from exc
-    except model.MultipleObjectsReturned as exc:
-        raise ArchiveValidationError(
-            f"Externe Referenz ist nicht eindeutig: {spec['model']} mit {lookup}."
-        ) from exc
-
-
-def _resolve_reference(spec, resolved: dict[str, models.Model]):
-    if spec is None:
-        return None, True
-    if "ref" in spec:
-        return resolved.get(spec["ref"]), spec["ref"] in resolved
-    if "external" in spec:
-        return _external_object(spec["external"]), True
-    raise ArchiveValidationError("Eine Objektreferenz im Archiv ist ungültig.")
-
-
-def _decode_archived_value(encoded, resolved):
+def _decode_archived_value(encoded, resolver):
     if isinstance(encoded, dict) and encoded.get("$type") == "object_ref":
-        target, available = _resolve_reference(encoded.get("value"), resolved)
+        target, available = resolver.resolve(encoded.get("value"))
+        if target is MISSING_REFERENCE:
+            return None, True
         return (target.pk if available and target is not None else None), available
     if isinstance(encoded, dict) and encoded.get("$type") == "multiobject_ref":
         values = []
         for spec in encoded.get("value", []):
-            target, available = _resolve_reference(spec, resolved)
+            target, available = resolver.resolve(spec)
             if not available:
                 return None, False
+            if target is MISSING_REFERENCE:
+                continue
             values.append(target.pk)
         return values, True
     if isinstance(encoded, dict) and "$type" not in encoded:
         value = {}
         all_available = True
         for key, item in encoded.items():
-            decoded, available = _decode_archived_value(item, resolved)
+            decoded, available = _decode_archived_value(item, resolver)
             value[key] = decoded
             all_available &= available
         return value, all_available
@@ -138,7 +118,7 @@ def _identity_candidates(model):
             yield tuple(constraint.fields)
 
 
-def _identity_lookup(model, record, resolved):
+def _identity_lookup(model, record, resolver):
     scalar_values = record.get("fields", {})
     relation_values = record.get("relations", {})
     generic_values = record.get("generic_relations", {})
@@ -156,14 +136,20 @@ def _identity_lookup(model, record, resolved):
             if name in scalar_values:
                 value = decode_scalar(scalar_values[name])
             elif name in relation_values:
-                value, available = _resolve_reference(relation_values[name], resolved)
+                value, available = resolver.resolve(relation_values[name])
                 if not available:
                     raise IdentityNotReady
+                if value is MISSING_REFERENCE:
+                    usable = False
+                    break
             elif name in generic_storage:
                 value_type, spec = generic_storage[name]
-                target, available = _resolve_reference(spec, resolved)
+                target, available = resolver.resolve(spec)
                 if not available:
                     raise IdentityNotReady
+                if target is MISSING_REFERENCE:
+                    usable = False
+                    break
                 if target is None:
                     value = None
                 elif value_type == "content_type":
@@ -197,11 +183,11 @@ def _mapped_object(source_instance: uuid.UUID, record: dict, model):
         return None
 
 
-def _find_existing(source_instance, model, record, resolved):
+def _find_existing(source_instance, model, record, resolver):
     mapped = _mapped_object(source_instance, record, model)
     if mapped is not None:
         return mapped
-    lookup = _identity_lookup(model, record, resolved)
+    lookup = _identity_lookup(model, record, resolver)
     if not lookup:
         return None
     try:
@@ -224,11 +210,12 @@ def _write_mapping(source_instance, record, obj):
     )
 
 
-def _field_kwargs(model, record, resolved):
+def _field_kwargs(model, record, resolver):
     valid_fields = {field.name: field for field in model._meta.concrete_fields}
     kwargs = {}
     unresolved = []
     unresolved_values = []
+    missing_required = []
     for name, encoded in record.get("fields", {}).items():
         field = valid_fields.get(name)
         if (
@@ -241,51 +228,59 @@ def _field_kwargs(model, record, resolved):
             continue
         if isinstance(field, (models.ForeignKey, models.OneToOneField)):
             continue
-        value, available = _decode_archived_value(encoded, resolved)
+        value, available = _decode_archived_value(encoded, resolver)
         if available:
             kwargs[name] = value
         elif name in ("custom_field_data", "default"):
             kwargs[name] = value if value is not None else ({} if name == "custom_field_data" else None)
             unresolved_values.append((name, encoded))
         else:
-            return None, [], []
+            return None, [], [], []
     for name, spec in record.get("relations", {}).items():
         field = valid_fields.get(name)
         if not isinstance(field, (models.ForeignKey, models.OneToOneField)):
             continue
-        value, available = _resolve_reference(spec, resolved)
+        value, available = resolver.resolve(spec)
         if available:
-            kwargs[name] = value
+            if value is MISSING_REFERENCE:
+                if not field.null and not field.has_default():
+                    missing_required.append(name)
+            else:
+                kwargs[name] = value
         elif field.null:
-            kwargs[name] = None
             unresolved.append((name, spec))
         else:
-            return None, [], []
-    return kwargs, unresolved, unresolved_values
+            return None, [], [], []
+    return kwargs, unresolved, unresolved_values, missing_required
 
 
-def _set_generic_relations(obj, record, resolved, *, allow_deferred: bool):
+def _set_generic_relations(obj, record, resolver, *, allow_deferred: bool):
     fields = {field.name: field for field in generic_foreign_keys(type(obj))}
     unresolved = []
+    missing_required = []
     for name, spec in record.get("generic_relations", {}).items():
         field = fields.get(name)
         if not field:
             continue
-        value, available = _resolve_reference(spec, resolved)
+        value, available = resolver.resolve(spec)
         if available:
-            setattr(obj, name, value)
+            if value is MISSING_REFERENCE:
+                ct_field = obj._meta.get_field(field.ct_field)
+                id_field = obj._meta.get_field(field.fk_field)
+                if not ct_field.null or not id_field.null:
+                    missing_required.append(name)
+            else:
+                setattr(obj, name, value)
         elif allow_deferred:
             ct_field = obj._meta.get_field(field.ct_field)
             id_field = obj._meta.get_field(field.fk_field)
             if ct_field.null and id_field.null:
-                setattr(obj, field.ct_field, None)
-                setattr(obj, field.fk_field, None)
                 unresolved.append((name, spec))
             else:
                 return None
         else:
             return None
-    return unresolved
+    return unresolved, missing_required
 
 
 def _set_files(obj, record, assets, saved_files, *, dry_run: bool):
@@ -308,7 +303,7 @@ def _cleanup_files(saved_files):
             logger.warning("Could not remove rolled-back import file %s", name, exc_info=True)
 
 
-def _apply_m2m(obj, record, resolved):
+def _apply_m2m(obj, record, resolver):
     for name, specs in record.get("many_to_many", {}).items():
         try:
             manager = getattr(obj, name)
@@ -316,9 +311,11 @@ def _apply_m2m(obj, record, resolved):
             continue
         values = []
         for spec in specs:
-            value, available = _resolve_reference(spec, resolved)
+            value, available = resolver.resolve(spec)
             if not available:
                 raise ArchiveValidationError(f"M2M-Referenz für {record['id']} konnte nicht aufgelöst werden.")
+            if value is MISSING_REFERENCE:
+                continue
             values.append(value)
         manager.set(values)
 
@@ -347,6 +344,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
 
     report = ImportReport(dry_run=dry_run, warnings=list(parsed.warnings))
     resolved = {}
+    resolver = ReferenceResolver(resolved, report.warnings, _model_for)
     deferred_relations = []
     deferred_generic = []
     deferred_values = []
@@ -360,11 +358,13 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 progressed = False
                 for record_id, record in list(pending.items()):
                     model = _model_for(record["model"])
-                    kwargs, unresolved, unresolved_value_fields = _field_kwargs(model, record, resolved)
+                    kwargs, unresolved, unresolved_value_fields, missing_required = _field_kwargs(
+                        model, record, resolver
+                    )
                     if kwargs is None:
                         continue
                     try:
-                        existing = _find_existing(source_instance, model, record, resolved)
+                        existing = _find_existing(source_instance, model, record, resolver)
                     except IdentityNotReady:
                         continue
                     if existing is not None and conflict_strategy == "fail":
@@ -377,8 +377,16 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                         obj = existing or model()
                         for name, value in kwargs.items():
                             setattr(obj, name, value)
-                        generic_unresolved = _set_generic_relations(obj, record, resolved, allow_deferred=True)
-                        if generic_unresolved is None:
+                        generic_result = _set_generic_relations(obj, record, resolver, allow_deferred=True)
+                        if generic_result is None:
+                            continue
+                        generic_unresolved, missing_generic = generic_result
+                        missing_required.extend(missing_generic)
+                        if missing_required and existing is None:
+                            resolver.skip(record_id, record["model"], missing_required)
+                            report.add(record["model"], "skipped")
+                            pending.pop(record_id)
+                            progressed = True
                             continue
                         _set_files(obj, record, parsed.assets, saved_files, dry_run=dry_run)
                         obj.save()
@@ -405,9 +413,11 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
             for record_id, name, spec in deferred_relations:
                 if record_id not in writable:
                     continue
-                value, available = _resolve_reference(spec, resolved)
+                value, available = resolver.resolve(spec)
                 if not available:
                     raise ArchiveValidationError(f"Referenz {name} für {record_id} konnte nicht aufgelöst werden.")
+                if value is MISSING_REFERENCE:
+                    continue
                 obj = resolved[record_id]
                 setattr(obj, name, value)
                 obj.save(update_fields=[name])
@@ -415,9 +425,11 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
             for record_id, name, spec in deferred_generic:
                 if record_id not in writable:
                     continue
-                value, available = _resolve_reference(spec, resolved)
+                value, available = resolver.resolve(spec)
                 if not available:
                     raise ArchiveValidationError(f"Generische Referenz {name} für {record_id} fehlt.")
+                if value is MISSING_REFERENCE:
+                    continue
                 obj = resolved[record_id]
                 setattr(obj, name, value)
                 field = next(field for field in generic_foreign_keys(type(obj)) if field.name == name)
@@ -426,7 +438,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
             for record_id, name, encoded in deferred_values:
                 if record_id not in writable:
                     continue
-                value, available = _decode_archived_value(encoded, resolved)
+                value, available = _decode_archived_value(encoded, resolver)
                 if not available:
                     raise ArchiveValidationError(f"Custom-Field-Referenz {name} für {record_id} fehlt.")
                 obj = resolved[record_id]
@@ -435,7 +447,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
 
             for record_id, record in records.items():
                 if record_id in writable:
-                    _apply_m2m(resolved[record_id], record, resolved)
+                    _apply_m2m(resolved[record_id], record, resolver)
 
             if dry_run:
                 transaction.set_rollback(True)
