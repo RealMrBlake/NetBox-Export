@@ -129,6 +129,12 @@ Bei neuen NetBox-Modulen wird die automatische Komponentenreplikation
 deaktiviert. Ports, Interfaces und Bays werden stattdessen ausschließlich aus
 den Archivdatensätzen angelegt beziehungsweise vorhandenen Komponenten
 zugeordnet.
+Geräte werden in einer separaten Abschlussphase im Rack platziert, damit auch
+Positionswechsel ohne temporäre Doppelbelegung funktionieren. Bei fremden
+Belegungen löst **Aktualisieren** das Zielgerät mit Warnung von seiner Position,
+**Überspringen** lässt das importierte Gerät positionslos und **Import abbrechen**
+meldet den Rackplatzkonflikt vor dem Datenbankfehler. Mehr-U- und
+Full-Depth-Belegungen werden dabei berücksichtigt.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei

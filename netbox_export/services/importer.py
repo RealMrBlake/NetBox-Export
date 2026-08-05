@@ -4,6 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from decimal import Decimal
 
 from django.apps import apps
 from django.conf import settings
@@ -73,6 +74,13 @@ class ImportReport:
         setattr(self, action, getattr(self, action) + 1)
         counters = self.models.setdefault(model, {"created": 0, "updated": 0, "skipped": 0})
         counters[action] += 1
+
+
+@dataclass(frozen=True)
+class DeferredDevicePlacement:
+    rack_spec: dict | None
+    position: object
+    face: object
 
 
 def _model_for(label: str):
@@ -211,6 +219,155 @@ def _find_existing(source_instance, model, record, resolver):
             f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel {lookup} bereits existiert.",
         )
     return natural
+
+
+def _defer_device_placement(model, record):
+    if model._meta.label_lower != "dcim.device":
+        return record, None
+
+    fields = record.get("fields", {})
+    relations = record.get("relations", {})
+    if "rack" not in relations or "position" not in fields or "face" not in fields:
+        return record, None
+
+    prepared = dict(record)
+    prepared["fields"] = {
+        name: value for name, value in fields.items() if name not in ("position", "face")
+    }
+    prepared["relations"] = {name: value for name, value in relations.items() if name != "rack"}
+    placement = DeferredDevicePlacement(
+        rack_spec=relations["rack"],
+        position=decode_scalar(fields["position"]),
+        face=decode_scalar(fields["face"]),
+    )
+    return prepared, placement
+
+
+def _placement_can_be_applied(placement, resolver):
+    rack, available = resolver.resolve(placement.rack_spec)
+    return not (available and rack is MISSING_REFERENCE)
+
+
+def _stage_device_placement(device):
+    device.position = None
+    device.face = None
+
+
+def _device_footprint(device):
+    device_type = getattr(device, "device_type", None)
+    height = Decimal(str(getattr(device_type, "u_height", 1) or 0))
+    if height <= 0:
+        height = Decimal("0.5")
+    return height, bool(getattr(device_type, "is_full_depth", False))
+
+
+def _device_placement_conflicts(device, rack, position, face):
+    if rack is None or position is None:
+        return []
+
+    position = Decimal(str(position))
+    height, full_depth = _device_footprint(device)
+    end = position + height
+    candidates = (
+        type(device)
+        ._default_manager.select_for_update()
+        .select_related("device_type")
+        .filter(rack=rack, position__isnull=False)
+        .exclude(pk=device.pk)
+    )
+    conflicts = []
+    for candidate in candidates:
+        candidate_position = Decimal(str(candidate.position))
+        candidate_height, candidate_full_depth = _device_footprint(candidate)
+        faces_overlap = full_depth or candidate_full_depth or candidate.face == face
+        positions_overlap = position < candidate_position + candidate_height and candidate_position < end
+        if faces_overlap and positions_overlap:
+            conflicts.append(candidate)
+    return conflicts
+
+
+def _placement_target(rack, position, face):
+    rack_name = getattr(rack, "name", None) or str(rack.pk)
+    return f"Rack {rack_name}, Position {position}, Seite {face or '-'}"
+
+
+def _conflicting_devices(conflicts):
+    return ", ".join(
+        f"{device.pk} ({getattr(device, 'name', None) or 'ohne Namen'})" for device in conflicts
+    )
+
+
+def _save_device_placement(device, rack, position, face, compatibility):
+    device.rack = rack
+    device.position = position
+    device.face = face
+    update_fields = ["rack", "position", "face"]
+    rack_location = getattr(rack, "location", None)
+    if rack_location is not None:
+        device.location = rack_location
+        update_fields.append("location")
+    compatibility.save(device, update_fields=update_fields)
+
+
+def _apply_device_placements(
+    placements,
+    resolved,
+    resolver,
+    compatibility,
+    *,
+    conflict_strategy,
+):
+    for record_id, placement in placements:
+        rack, available = resolver.resolve(placement.rack_spec)
+        if not available:
+            raise ArchiveValidationError(f"Rack-Referenz für {record_id} konnte nicht aufgelöst werden.")
+        if rack is MISSING_REFERENCE:
+            continue
+
+        device = resolved[record_id]
+        position = placement.position
+        face = placement.face
+        if rack is None and (position is not None or face is not None):
+            resolver.warn(
+                ("device-placement-without-rack", record_id),
+                f"Rackplatz für {record_id} wurde ausgelassen, da kein Rack zugeordnet ist.",
+            )
+            position = None
+            face = None
+
+        if rack is not None and position is not None:
+            rack = type(rack)._default_manager.select_for_update().get(pk=rack.pk)
+
+        conflicts = _device_placement_conflicts(device, rack, position, face)
+        if not conflicts:
+            _save_device_placement(device, rack, position, face, compatibility)
+            continue
+
+        target = _placement_target(rack, position, face)
+        occupants = _conflicting_devices(conflicts)
+        if conflict_strategy == "fail":
+            raise ImportConflictError(
+                f"Rackplatzkonflikt für {record_id}: {target} ist durch Zielgerät(e) {occupants} belegt."
+            )
+        if conflict_strategy == "skip":
+            _save_device_placement(device, rack, None, None, compatibility)
+            resolver.warn(
+                ("device-placement-skipped", record_id),
+                f"Rackplatz für {record_id} wurde übersprungen: {target} bleibt durch "
+                f"Zielgerät(e) {occupants} belegt. Das importierte Gerät wurde ohne Position im Rack gespeichert.",
+            )
+            continue
+
+        for conflict in conflicts:
+            conflict.position = None
+            conflict.face = None
+            compatibility.save(conflict, update_fields=["position", "face"])
+        _save_device_placement(device, rack, position, face, compatibility)
+        resolver.warn(
+            ("device-placement-released", record_id),
+            f"Rackplatzkonflikt für {record_id} gelöst: Zielgerät(e) {occupants} wurden aus {target} "
+            "gelöst und ohne Position im Rack belassen.",
+        )
 
 
 def _write_mapping(source_instance, record, obj):
@@ -370,6 +527,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
     deferred_relations = []
     deferred_generic = []
     deferred_values = []
+    deferred_device_placements = []
     writable = set()
     saved_files = []
 
@@ -380,8 +538,16 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 progressed = False
                 for record_id, record in list(pending.items()):
                     model = _model_for(record["model"])
+                    prepared_record, device_placement = _defer_device_placement(model, record)
+                    if device_placement is not None and not _placement_can_be_applied(
+                        device_placement, resolver
+                    ):
+                        device_placement = None
                     kwargs, unresolved, unresolved_value_fields, missing_required = _field_kwargs(
-                        model, record, resolver, tenant_required=compatibility.tenant_required
+                        model,
+                        prepared_record,
+                        resolver,
+                        tenant_required=compatibility.tenant_required,
                     )
                     if kwargs is None:
                         continue
@@ -411,6 +577,8 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                             progressed = True
                             continue
                         _set_files(obj, record, parsed.assets, saved_files, dry_run=dry_run)
+                        if device_placement is not None:
+                            _stage_device_placement(obj)
                         compatibility.prepare_initial_save(obj, is_new=existing is None)
                         compatibility.save(obj)
                         action = "updated" if existing is not None else "created"
@@ -420,6 +588,8 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                         deferred_values.extend(
                             (record_id, name, encoded) for name, encoded in unresolved_value_fields
                         )
+                        if device_placement is not None:
+                            deferred_device_placements.append((record_id, device_placement))
 
                     resolved[record_id] = obj
                     _write_mapping(source_instance, record, obj)
@@ -468,6 +638,14 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 obj = resolved[record_id]
                 setattr(obj, name, value)
                 compatibility.save(obj, update_fields=[name])
+
+            _apply_device_placements(
+                deferred_device_placements,
+                resolved,
+                resolver,
+                compatibility,
+                conflict_strategy=conflict_strategy,
+            )
 
             for record_id, record in records.items():
                 if record_id in writable:
