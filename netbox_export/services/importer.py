@@ -10,6 +10,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
+from django.core.files.images import get_image_dimensions
 from django.db import IntegrityError, models, transaction
 
 from netbox_export.models import ImportedObjectMapping
@@ -462,15 +463,32 @@ def _set_generic_relations(obj, record, resolver, *, allow_deferred: bool):
 
 
 def _set_files(obj, record, assets, saved_files, *, dry_run: bool):
-    if dry_run:
-        return
     for name, spec in record.get("files", {}).items():
         if not spec or "path" not in spec or spec["path"] not in assets:
             continue
         filename = spec.get("name", spec["path"]).replace("\\", "/").rsplit("/", 1)[-1]
+        field = obj._meta.get_field(name)
+        content = ContentFile(assets[spec["path"]])
+        dimensions = None
+        if isinstance(field, models.ImageField):
+            dimensions = get_image_dimensions(content)
+            content.seek(0)
+            width, height = dimensions
+            if field.width_field and width is not None:
+                setattr(obj, field.width_field, width)
+            if field.height_field and height is not None:
+                setattr(obj, field.height_field, height)
+        if dry_run:
+            continue
         file_value = getattr(obj, name)
-        file_value.save(filename, ContentFile(assets[spec["path"]]), save=False)
+        file_value.save(filename, content, save=False)
         saved_files.append((file_value.storage, file_value.name))
+        if dimensions is not None:
+            width, height = dimensions
+            if field.width_field and width is not None:
+                setattr(obj, field.width_field, width)
+            if field.height_field and height is not None:
+                setattr(obj, field.height_field, height)
 
 
 def _cleanup_files(saved_files):

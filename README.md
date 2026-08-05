@@ -135,6 +135,9 @@ Belegungen löst **Aktualisieren** das Zielgerät mit Warnung von seiner Positio
 **Überspringen** lässt das importierte Gerät positionslos und **Import abbrechen**
 meldet den Rackplatzkonflikt vor dem Datenbankfehler. Mehr-U- und
 Full-Depth-Belegungen werden dabei berücksichtigt.
+Bei Bildanhängen werden Breite und Höhe direkt aus der Bilddatei im Archiv
+ermittelt. Dadurch sind die Pflichtfelder von NetBox auch im Prüflauf und bei
+Dateispeichern ohne unmittelbaren Modell-Save gesetzt.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei
