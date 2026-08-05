@@ -26,7 +26,7 @@ def export_scope(scope_type: str, scope_id: int, *, max_objects: int, signing_ke
         "created_at": datetime.now(UTC).isoformat(),
         "source_instance": str(InstanceIdentity.local_id()),
         "source_netbox_version": getattr(getattr(settings, "RELEASE", None), "version", "4.6"),
-        "plugin_version": "0.1.0",
+        "plugin_version": "0.2.0",
         "scope": {
             "type": scope_type,
             "source_pk": str(scope_id),

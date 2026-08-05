@@ -52,7 +52,7 @@
         <div class="card-header">
           <h2 class="card-title"><i class="mdi mdi-download me-1" aria-hidden="true"></i> Export</h2>
         </div>
-        <form method="post" novalidate>
+        <form method="post" id="netbox-export-form" novalidate>
           {% csrf_token %}
           <input type="hidden" name="action" value="export">
           <div class="card-body">
@@ -62,6 +62,15 @@
             {% render_form export_form %}
           </div>
           <div class="card-footer text-end">
+            <div id="export-progress" class="mb-3 text-start" hidden aria-live="polite">
+              <div class="d-flex justify-content-between mb-1">
+                <span class="progress-label">Export wird vorbereitet ...</span>
+                <span class="progress-percent"></span>
+              </div>
+              <div class="progress" role="progressbar" aria-label="Exportfortschritt" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+              </div>
+            </div>
             <button type="submit" class="btn btn-primary">
               <i class="mdi mdi-archive-arrow-down me-1" aria-hidden="true"></i> ZIP exportieren
             </button>
@@ -75,7 +84,7 @@
         <div class="card-header">
           <h2 class="card-title"><i class="mdi mdi-upload me-1" aria-hidden="true"></i> Import</h2>
         </div>
-        <form method="post" enctype="multipart/form-data" novalidate>
+        <form method="post" id="netbox-import-form" enctype="multipart/form-data" novalidate>
           {% csrf_token %}
           <input type="hidden" name="action" value="import">
           <div class="card-body">
@@ -85,6 +94,15 @@
             {% render_form import_form %}
           </div>
           <div class="card-footer text-end">
+            <div id="import-progress" class="mb-3 text-start" hidden aria-live="polite">
+              <div class="d-flex justify-content-between mb-1">
+                <span class="progress-label">Archiv wird hochgeladen ...</span>
+                <span class="progress-percent"></span>
+              </div>
+              <div class="progress" role="progressbar" aria-label="Importfortschritt" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+              </div>
+            </div>
             <button type="submit" class="btn btn-primary">
               <i class="mdi mdi-archive-arrow-up me-1" aria-hidden="true"></i> Archiv verarbeiten
             </button>
@@ -112,6 +130,112 @@
         typeSelect.addEventListener('change', refresh);
         refresh();
       }
+
+      const replacePage = (html) => {
+        document.open();
+        document.write(html);
+        document.close();
+      };
+
+      const filenameFromHeader = (header) => {
+        const match = header && header.match(/filename="([^"]+)"/i);
+        return match ? match[1] : 'netbox-export.zip';
+      };
+
+      const setBusy = (form, busy) => {
+        document.querySelectorAll('#netbox-export-form button, #netbox-import-form button').forEach((button) => {
+          button.disabled = busy;
+        });
+        form.setAttribute('aria-busy', busy ? 'true' : 'false');
+      };
+
+      const updateProgress = (container, label, percent = null, state = 'active') => {
+        const bar = container.querySelector('.progress-bar');
+        const progress = container.querySelector('[role="progressbar"]');
+        container.hidden = false;
+        container.querySelector('.progress-label').textContent = label;
+        container.querySelector('.progress-percent').textContent = percent === null ? '' : `${percent}%`;
+        bar.style.width = percent === null ? '100%' : `${percent}%`;
+        bar.classList.toggle('progress-bar-animated', state === 'active');
+        bar.classList.toggle('progress-bar-striped', state === 'active');
+        bar.classList.toggle('bg-success', state === 'success');
+        bar.classList.toggle('bg-danger', state === 'error');
+        if (percent === null) {
+          progress.removeAttribute('aria-valuenow');
+          progress.setAttribute('aria-valuetext', label);
+        } else {
+          progress.setAttribute('aria-valuenow', percent);
+          progress.removeAttribute('aria-valuetext');
+        }
+      };
+
+      const exportForm = document.getElementById('netbox-export-form');
+      const exportProgress = document.getElementById('export-progress');
+      exportForm.addEventListener('submit', (event) => {
+        if (!window.XMLHttpRequest || !window.FormData) return;
+        event.preventDefault();
+        if (!exportForm.reportValidity()) return;
+        setBusy(exportForm, true);
+        updateProgress(exportProgress, 'Export wird vorbereitet ...');
+
+        const request = new XMLHttpRequest();
+        request.open('POST', exportForm.action || window.location.href);
+        request.responseType = 'blob';
+        request.onprogress = (progressEvent) => {
+          if (!progressEvent.lengthComputable) return;
+          const percent = Math.min(99, Math.round((progressEvent.loaded / progressEvent.total) * 100));
+          updateProgress(exportProgress, 'ZIP wird übertragen ...', percent);
+        };
+        request.onload = async () => {
+          const contentType = request.getResponseHeader('Content-Type') || '';
+          if (request.status < 200 || request.status >= 300 || !contentType.includes('application/zip')) {
+            replacePage(await request.response.text());
+            return;
+          }
+          const downloadUrl = URL.createObjectURL(request.response);
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = filenameFromHeader(request.getResponseHeader('Content-Disposition'));
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+          updateProgress(exportProgress, 'Export abgeschlossen', 100, 'success');
+          setBusy(exportForm, false);
+        };
+        request.onerror = () => {
+          updateProgress(exportProgress, 'Export fehlgeschlagen', 100, 'error');
+          setBusy(exportForm, false);
+        };
+        request.send(new FormData(exportForm));
+      });
+
+      const importForm = document.getElementById('netbox-import-form');
+      const importProgress = document.getElementById('import-progress');
+      importForm.addEventListener('submit', (event) => {
+        if (!window.XMLHttpRequest || !window.FormData) return;
+        event.preventDefault();
+        if (!importForm.reportValidity()) return;
+        setBusy(importForm, true);
+        updateProgress(importProgress, 'Archiv wird hochgeladen ...', 0);
+
+        const request = new XMLHttpRequest();
+        request.open('POST', importForm.action || window.location.href);
+        request.upload.onprogress = (progressEvent) => {
+          if (!progressEvent.lengthComputable) return;
+          const percent = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100));
+          updateProgress(importProgress, 'Archiv wird hochgeladen ...', percent);
+        };
+        request.upload.onload = () => {
+          updateProgress(importProgress, 'Archiv wird geprüft und verarbeitet ...');
+        };
+        request.onload = () => replacePage(request.responseText);
+        request.onerror = () => {
+          updateProgress(importProgress, 'Import fehlgeschlagen', 100, 'error');
+          setBusy(importForm, false);
+        };
+        request.send(new FormData(importForm));
+      });
     })();
   </script>
 {% endblock javascript %}

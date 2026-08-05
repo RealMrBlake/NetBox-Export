@@ -57,6 +57,7 @@ class DashboardView(UserPassesTestMixin, View):
         filename = f"netbox-export-{form.cleaned_data['scope_type']}-{slugify(str(scope)) or scope.pk}.zip"
         response = HttpResponse(payload, content_type="application/zip")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = len(payload)
         response["X-Content-Type-Options"] = "nosniff"
         return response
 
@@ -85,4 +86,3 @@ class DashboardView(UserPassesTestMixin, View):
             self.template_name,
             self._context(import_form=ImportForm(prefix="import"), report=report, manifest=parsed.manifest),
         )
-

@@ -7,7 +7,7 @@ class NetBoxExportConfig(PluginConfig):
     name = "netbox_export"
     verbose_name = "NetBox-Export"
     description = "Portable ZIP export and import for tenants and locations"
-    version = "0.1.0"
+    version = "0.2.0"
     author = "NetBox Export contributors"
     base_url = "netbox-export"
     min_version = "4.6.0"
