@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
 import logging
+import math
+import threading
 import uuid
+import warnings
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from decimal import Decimal
@@ -10,8 +14,8 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
-from django.core.files.images import get_image_dimensions
 from django.db import IntegrityError, models, transaction
+from PIL import Image as PillowImage
 
 from netbox_export.models import ImportedObjectMapping
 
@@ -52,6 +56,11 @@ EXPLICIT_IDENTITIES = {
     "virtualization.virtualmachine": ("cluster", "tenant", "name"),
     "virtualization.vminterface": ("virtual_machine", "name"),
 }
+
+NETBOX_IMAGE_MAX_PIXELS = 25_000_000
+IMPORTED_IMAGE_TARGET_PIXELS = 20_000_000
+IMPORTED_IMAGE_SOURCE_MAX_PIXELS = 100_000_000
+_IMAGE_LIMIT_LOCK = threading.Lock()
 
 
 class IdentityNotReady(Exception):
@@ -462,33 +471,118 @@ def _set_generic_relations(obj, record, resolver, *, allow_deferred: bool):
     return unresolved, missing_required
 
 
-def _set_files(obj, record, assets, saved_files, *, dry_run: bool):
+def _open_image_with_bounded_override(data):
+    stream = io.BytesIO(data)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PillowImage.DecompressionBombWarning)
+            image = PillowImage.open(stream)
+        return stream, image
+    except (PillowImage.DecompressionBombError, PillowImage.DecompressionBombWarning):
+        stream.close()
+    except Exception:
+        stream.close()
+        raise
+
+    stream = io.BytesIO(data)
+    with _IMAGE_LIMIT_LOCK:
+        original_limit = PillowImage.MAX_IMAGE_PIXELS
+        PillowImage.MAX_IMAGE_PIXELS = IMPORTED_IMAGE_SOURCE_MAX_PIXELS
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", PillowImage.DecompressionBombWarning)
+                image = PillowImage.open(stream)
+        except PillowImage.DecompressionBombError as exc:
+            stream.close()
+            raise ArchiveValidationError(
+                "Das Bild überschreitet die sichere Importgrenze von "
+                f"{IMPORTED_IMAGE_SOURCE_MAX_PIXELS:,} Pixeln."
+            ) from exc
+        except Exception:
+            stream.close()
+            raise
+        finally:
+            PillowImage.MAX_IMAGE_PIXELS = original_limit
+    return stream, image
+
+
+def _resized_image_save_options(image_format, image):
+    options = {}
+    if icc_profile := image.info.get("icc_profile"):
+        options["icc_profile"] = icc_profile
+    if image_format in ("JPEG", "MPO"):
+        options.update(quality=85, optimize=True, progressive=True)
+    elif image_format == "WEBP":
+        options.update(quality=85, method=4)
+    elif image_format in ("PNG", "GIF"):
+        options["optimize"] = True
+    elif image_format == "TIFF":
+        options["compression"] = "tiff_deflate"
+    return options
+
+
+def _prepare_image_asset(data):
+    stream, image = _open_image_with_bounded_override(data)
+    try:
+        width, height = image.size
+        source_pixels = width * height
+        if source_pixels > IMPORTED_IMAGE_SOURCE_MAX_PIXELS:
+            raise ArchiveValidationError(
+                f"Das Bild mit {source_pixels:,} Pixeln überschreitet die sichere Importgrenze von "
+                f"{IMPORTED_IMAGE_SOURCE_MAX_PIXELS:,} Pixeln."
+            )
+        if source_pixels <= NETBOX_IMAGE_MAX_PIXELS:
+            return data, width, height, None
+
+        scale = math.sqrt(IMPORTED_IMAGE_TARGET_PIXELS / source_pixels)
+        target_size = (max(1, math.floor(width * scale)), max(1, math.floor(height * scale)))
+        image.thumbnail(target_size, PillowImage.Resampling.LANCZOS, reducing_gap=3.0)
+        image_format = image.format or "PNG"
+        if image_format == "MPO":
+            image_format = "JPEG"
+        output = io.BytesIO()
+        image.save(output, format=image_format, **_resized_image_save_options(image_format, image))
+        resized_width, resized_height = image.size
+        resize_info = (width, height, resized_width, resized_height)
+        return output.getvalue(), resized_width, resized_height, resize_info
+    finally:
+        image.close()
+        stream.close()
+
+
+def _set_files(obj, record, assets, saved_files, *, dry_run: bool, import_warnings=None):
     for name, spec in record.get("files", {}).items():
         if not spec or "path" not in spec or spec["path"] not in assets:
             continue
         filename = spec.get("name", spec["path"]).replace("\\", "/").rsplit("/", 1)[-1]
         field = obj._meta.get_field(name)
-        content = ContentFile(assets[spec["path"]])
-        dimensions = None
+        content_data = assets[spec["path"]]
+        dimensions = (None, None)
         if isinstance(field, models.ImageField):
-            dimensions = get_image_dimensions(content)
-            content.seek(0)
-            width, height = dimensions
+            content_data, width, height, resize_info = _prepare_image_asset(content_data)
+            dimensions = (width, height)
             if field.width_field and width is not None:
                 setattr(obj, field.width_field, width)
             if field.height_field and height is not None:
                 setattr(obj, field.height_field, height)
+            if resize_info is not None and import_warnings is not None:
+                old_width, old_height, new_width, new_height = resize_info
+                record_id = record.get("id", obj._meta.label_lower)
+                import_warnings.append(
+                    f"Bild für {record_id} wurde von {old_width}×{old_height} auf "
+                    f"{new_width}×{new_height} Pixel verkleinert."
+                )
         if dry_run:
             continue
+        content = ContentFile(content_data)
         file_value = getattr(obj, name)
         file_value.save(filename, content, save=False)
         saved_files.append((file_value.storage, file_value.name))
-        if dimensions is not None:
-            width, height = dimensions
-            if field.width_field and width is not None:
-                setattr(obj, field.width_field, width)
-            if field.height_field and height is not None:
-                setattr(obj, field.height_field, height)
+        width, height = dimensions
+        if isinstance(field, models.ImageField) and field.width_field and width is not None:
+            setattr(obj, field.width_field, width)
+        if isinstance(field, models.ImageField) and field.height_field and height is not None:
+            setattr(obj, field.height_field, height)
 
 
 def _cleanup_files(saved_files):
@@ -594,7 +688,14 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                             pending.pop(record_id)
                             progressed = True
                             continue
-                        _set_files(obj, record, parsed.assets, saved_files, dry_run=dry_run)
+                        _set_files(
+                            obj,
+                            record,
+                            parsed.assets,
+                            saved_files,
+                            dry_run=dry_run,
+                            import_warnings=report.warnings,
+                        )
                         if device_placement is not None:
                             _stage_device_placement(obj)
                         compatibility.prepare_initial_save(obj, is_new=existing is None)

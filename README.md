@@ -137,7 +137,11 @@ meldet den Rackplatzkonflikt vor dem Datenbankfehler. Mehr-U- und
 Full-Depth-Belegungen werden dabei berücksichtigt.
 Bei Bildanhängen werden Breite und Höhe direkt aus der Bilddatei im Archiv
 ermittelt. Dadurch sind die Pflichtfelder von NetBox auch im Prüflauf und bei
-Dateispeichern ohne unmittelbaren Modell-Save gesetzt.
+Dateispeichern ohne unmittelbaren Modell-Save gesetzt. Bilder oberhalb des in
+NetBox 4.6.x verwendeten Limits von 25 Millionen Pixeln werden proportional auf
+höchstens 20 Millionen Pixel verkleinert und im Importbericht als Warnung
+ausgewiesen. Zum Schutz des Importprozesses bleibt eine harte Quellgrenze von
+100 Millionen Pixeln bestehen.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei
