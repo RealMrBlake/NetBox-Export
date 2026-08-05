@@ -24,7 +24,8 @@ Das Plugin muss auf beiden NetBox-Instanzen installiert sein.
 ```bash
 cd /opt/netbox
 source venv/bin/activate
-pip install /path/to/NetBox-Export
+pip install --upgrade --force-reinstall \
+  "git+https://git.mrblake.cc/MrBlake/Netbox-Utilities.git@main"
 ```
 
 In `configuration.py` ergänzen:
