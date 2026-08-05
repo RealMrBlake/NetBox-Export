@@ -122,6 +122,9 @@ anderem die Plattformzuordnung von NetBox-SLM-Softwareinstallationen.
 Eindeutige optionale Beziehungen wie die primären IP-Adressen von Geräten und
 virtuellen Maschinen werden in einer zweiten Phase zugewiesen. Eine veraltete
 Zielzuordnung wird dabei atomar gelöst und als Warnung protokolliert.
+Gespeicherte Importzuordnungen werden bei Wiederholungsimporten gegen den
+aktuellen Fachschlüssel geprüft. Existiert das Objekt bereits unter diesem
+Schlüssel, wird die Zuordnung korrigiert, statt ein Duplikat anzulegen.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei

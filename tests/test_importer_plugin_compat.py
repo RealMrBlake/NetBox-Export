@@ -1,9 +1,11 @@
+import uuid
 from typing import ClassVar
 
 import pytest
 from django.db import connection, models
 
-from netbox_export.services.importer import _field_kwargs
+from netbox_export.services import importer as importer_module
+from netbox_export.services.importer import _field_kwargs, _find_existing
 from netbox_export.services.plugin_compat import PluginCompatibility
 from netbox_export.services.references import ReferenceResolver
 
@@ -50,6 +52,25 @@ class UniqueAddressOwner(models.Model):
 
     class Meta:
         app_label = "compat_tests"
+
+
+class Device(models.Model):
+    class Meta:
+        app_label = "dcim"
+
+
+class RearPort(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    name = models.CharField(max_length=64)
+
+    class Meta:
+        app_label = "dcim"
+        constraints: ClassVar[list] = [
+            models.UniqueConstraint(
+                fields=("device", "name"),
+                name="dcim_rearport_unique_device_name",
+            )
+        ]
 
 
 def tenant_record():
@@ -164,3 +185,46 @@ def test_existing_unique_relation_is_released_before_reassignment():
         with connection.schema_editor() as schema_editor:
             schema_editor.delete_model(UniqueAddressOwner)
             schema_editor.delete_model(UniqueAddress)
+
+
+def test_natural_key_rebinds_stale_mapping_instead_of_creating_duplicate(monkeypatch):
+    with connection.schema_editor() as schema_editor:
+        schema_editor.create_model(Device)
+        schema_editor.create_model(RearPort)
+    try:
+        device = Device.objects.create()
+        natural = RearPort.objects.create(device=device, name="3-LC")
+        stale_mapping_target = RearPort(pk=999, device=device, name="Alt")
+        monkeypatch.setattr(
+            importer_module,
+            "_mapped_object",
+            lambda source_instance, record, model: stale_mapping_target,
+        )
+        warnings = []
+        resolver = ReferenceResolver(
+            {"dcim.device:160": device},
+            warnings,
+            lambda label: None,
+        )
+        record = {
+            "id": "dcim.rearport:77",
+            "model": "dcim.rearport",
+            "source_pk": "77",
+            "fields": {"name": "3-LC"},
+            "relations": {"device": {"ref": "dcim.device:160"}},
+        }
+
+        existing = _find_existing(uuid.uuid4(), RearPort, record, resolver)
+
+        assert existing == natural
+        assert warnings == [
+            (
+                "Gespeicherte Zuordnung für dcim.rearport:77 wurde von Ziel-ID 999 auf "
+                f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel "
+                f"{{'device': <Device: Device object ({device.pk})>, 'name': '3-LC'}} bereits existiert."
+            )
+        ]
+    finally:
+        with connection.schema_editor() as schema_editor:
+            schema_editor.delete_model(RearPort)
+            schema_editor.delete_model(Device)

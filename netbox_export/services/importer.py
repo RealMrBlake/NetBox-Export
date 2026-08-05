@@ -38,6 +38,8 @@ EXPLICIT_IDENTITIES = {
     "dcim.consoleserverport": ("device", "name"),
     "dcim.powerport": ("device", "name"),
     "dcim.poweroutlet": ("device", "name"),
+    "dcim.frontport": ("device", "name"),
+    "dcim.rearport": ("device", "name"),
     "dcim.devicebay": ("device", "name"),
     "dcim.modulebay": ("device", "name"),
     "dcim.inventoryitem": ("device", "parent", "name"),
@@ -191,19 +193,24 @@ def _mapped_object(source_instance: uuid.UUID, record: dict, model):
 
 def _find_existing(source_instance, model, record, resolver):
     mapped = _mapped_object(source_instance, record, model)
-    if mapped is not None:
-        return mapped
     lookup = _identity_lookup(model, record, resolver)
     if not lookup:
-        return None
+        return mapped
     try:
-        return model._default_manager.get(**lookup)
+        natural = model._default_manager.get(**lookup)
     except model.DoesNotExist:
-        return None
+        return mapped
     except model.MultipleObjectsReturned as exc:
         raise ImportConflictError(
             f"Mehrere Zielobjekte passen auf {record['model']} mit {lookup}."
         ) from exc
+    if mapped is not None and mapped.pk != natural.pk:
+        resolver.warn(
+            ("mapping-rebound", record["id"]),
+            f"Gespeicherte Zuordnung für {record['id']} wurde von Ziel-ID {mapped.pk} auf "
+            f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel {lookup} bereits existiert.",
+        )
+    return natural
 
 
 def _write_mapping(source_instance, record, obj):
