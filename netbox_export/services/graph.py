@@ -40,6 +40,7 @@ def is_exportable_model(model) -> bool:
         and not opts.abstract
         and not opts.proxy
         and not opts.auto_created
+        and not getattr(model, "_netbox_private", False)
         and opts.app_label not in EXCLUDED_APP_LABELS
         and opts.label_lower not in EXCLUDED_MODELS
     )

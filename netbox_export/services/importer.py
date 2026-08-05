@@ -16,6 +16,10 @@ from netbox_export.models import ImportedObjectMapping
 from .archive import ParsedArchive
 from .codec import SKIP_FIELD_NAMES, decode_scalar, generic_foreign_keys
 from .exceptions import ArchiveValidationError, ExportImportError, ImportConflictError
+from .plugin_compat import (
+    netbox_utilities_tenant_required,
+    relation_required_before_save,
+)
 from .references import MISSING_REFERENCE, ReferenceResolver
 
 EXPLICIT_IDENTITIES = {
@@ -210,7 +214,7 @@ def _write_mapping(source_instance, record, obj):
     )
 
 
-def _field_kwargs(model, record, resolver):
+def _field_kwargs(model, record, resolver, *, tenant_required: bool):
     valid_fields = {field.name: field for field in model._meta.concrete_fields}
     kwargs = {}
     unresolved = []
@@ -240,14 +244,17 @@ def _field_kwargs(model, record, resolver):
         field = valid_fields.get(name)
         if not isinstance(field, (models.ForeignKey, models.OneToOneField)):
             continue
+        required_before_save = relation_required_before_save(field, tenant_required=tenant_required)
         value, available = resolver.resolve(spec)
         if available:
             if value is MISSING_REFERENCE:
-                if not field.null and not field.has_default():
+                if required_before_save or (not field.null and not field.has_default()):
                     missing_required.append(name)
+            elif value is None and required_before_save:
+                missing_required.append(name)
             else:
                 kwargs[name] = value
-        elif field.null:
+        elif field.null and not required_before_save:
             unresolved.append((name, spec))
         else:
             return None, [], [], []
@@ -345,6 +352,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
     report = ImportReport(dry_run=dry_run, warnings=list(parsed.warnings))
     resolved = {}
     resolver = ReferenceResolver(resolved, report.warnings, _model_for)
+    tenant_required = netbox_utilities_tenant_required()
     deferred_relations = []
     deferred_generic = []
     deferred_values = []
@@ -359,7 +367,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 for record_id, record in list(pending.items()):
                     model = _model_for(record["model"])
                     kwargs, unresolved, unresolved_value_fields, missing_required = _field_kwargs(
-                        model, record, resolver
+                        model, record, resolver, tenant_required=tenant_required
                     )
                     if kwargs is None:
                         continue

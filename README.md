@@ -107,6 +107,19 @@ Import werden vorhandene Objekte über ihre eindeutigen Fachschlüssel erkannt.
   Werte zwischen `250` und `1000` erlauben eine Anpassung an Arbeitsspeicher und
   Datenbankleistung.
 
+## Plugin-Kompatibilität
+
+Der Exportgraph berücksichtigt installierte, mandantenbezogene Modelle und
+Dateien aus NetBox-SLM, Netbox-DokiWiki und NetBox-VM-Import. Private oder
+temporäre Plugin-Modelle werden nicht exportiert. Die von Netbox-Utilities
+erzwungene Mandantenpflicht wird beim Import berücksichtigt: Das Zielobjekt wird
+erst gespeichert, nachdem sein Mandant importiert und zugeordnet wurde.
+
+Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
+installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei
+identischem Django-`SECRET_KEY` direkt nutzbar; andernfalls muss das Kennwort am
+Ziel neu gesetzt werden.
+
 ## Tests
 
 ```bash

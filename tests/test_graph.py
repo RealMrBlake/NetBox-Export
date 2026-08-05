@@ -36,6 +36,17 @@ class GraphDetail(models.Model):
         app_label = "graph_tests"
 
 
+class PrivateGraphModel(models.Model):
+    _netbox_private = True
+
+    class Meta:
+        app_label = "graph_tests"
+
+
+def test_private_plugin_models_are_not_exportable():
+    assert graph_module.is_exportable_model(PrivateGraphModel) is False
+
+
 def test_batched_graph_collects_members_and_dependencies(monkeypatch):
     graph_models = (GraphParent, GraphReference, GraphChild, GraphDetail)
     with connection.schema_editor() as schema_editor:
