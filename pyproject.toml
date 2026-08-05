@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netbox-export"
+version = "0.1.0"
+description = "Portable ZIP export and import for scoped NetBox data"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [{name = "NetBox Export contributors"}]
+classifiers = [
+  "Framework :: Django",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+]
+
+[tool.setuptools.packages.find]
+include = ["netbox_export*"]
+
+[tool.setuptools.package-data]
+netbox_export = ["templates/**/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff.lint.per-file-ignores]
+"netbox_export/migrations/*.py" = ["RUF012"]

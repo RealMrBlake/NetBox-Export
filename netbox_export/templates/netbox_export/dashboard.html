@@ -1,0 +1,117 @@
+{% extends 'base/layout.html' %}
+{% load form_helpers %}
+
+{% block title %}NetBox-Export{% endblock title %}
+
+{% block header %}
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="row align-items-center">
+        <div class="col">
+          <h1 class="page-title">NetBox-Export</h1>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock header %}
+
+{% block content %}
+  {% if report %}
+    <div class="alert {% if report.dry_run %}alert-info{% else %}alert-success{% endif %}" role="alert">
+      <h2 class="h4 mb-2">
+        {% if report.dry_run %}Prüflauf erfolgreich{% else %}Import abgeschlossen{% endif %}
+      </h2>
+      <div>
+        {{ report.created }} erstellt, {{ report.updated }} aktualisiert, {{ report.skipped }} übersprungen.
+        Quelle: {{ manifest.scope.label }} ({{ manifest.object_count }} Objekte).
+      </div>
+      {% for warning in report.warnings %}<div class="mt-1">{{ warning }}</div>{% endfor %}
+    </div>
+    <div class="table-responsive mb-4">
+      <table class="table table-sm table-hover">
+        <thead>
+          <tr><th>Modell</th><th class="text-end">Erstellt</th><th class="text-end">Aktualisiert</th><th class="text-end">Übersprungen</th></tr>
+        </thead>
+        <tbody>
+          {% for model, counts in report.models.items %}
+            <tr>
+              <td>{{ model }}</td>
+              <td class="text-end">{{ counts.created }}</td>
+              <td class="text-end">{{ counts.updated }}</td>
+              <td class="text-end">{{ counts.skipped }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-12 col-xl-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <h2 class="card-title"><i class="mdi mdi-download me-1" aria-hidden="true"></i> Export</h2>
+        </div>
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="export">
+          <div class="card-body">
+            {% if export_form.non_field_errors %}
+              <div class="alert alert-danger">{{ export_form.non_field_errors }}</div>
+            {% endif %}
+            {% render_form export_form %}
+          </div>
+          <div class="card-footer text-end">
+            <button type="submit" class="btn btn-primary">
+              <i class="mdi mdi-archive-arrow-down me-1" aria-hidden="true"></i> ZIP exportieren
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <h2 class="card-title"><i class="mdi mdi-upload me-1" aria-hidden="true"></i> Import</h2>
+        </div>
+        <form method="post" enctype="multipart/form-data" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="import">
+          <div class="card-body">
+            {% if import_form.non_field_errors %}
+              <div class="alert alert-danger">{{ import_form.non_field_errors }}</div>
+            {% endif %}
+            {% render_form import_form %}
+          </div>
+          <div class="card-footer text-end">
+            <button type="submit" class="btn btn-primary">
+              <i class="mdi mdi-archive-arrow-up me-1" aria-hidden="true"></i> Archiv verarbeiten
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script>
+    (() => {
+      const typeSelect = document.getElementById('id_export-scope_type');
+      const names = ['tenant_group', 'tenant', 'region', 'site', 'location'];
+      const refresh = () => {
+        names.forEach((name) => {
+          const field = document.getElementById(`id_export-${name}`);
+          const wrapper = field && field.closest('.row');
+          if (wrapper) wrapper.hidden = name !== typeSelect.value;
+        });
+      };
+      if (typeSelect) {
+        typeSelect.addEventListener('change', refresh);
+        refresh();
+      }
+    })();
+  </script>
+{% endblock javascript %}
