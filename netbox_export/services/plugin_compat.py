@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from functools import cache
+
 from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.db import models
 
 AUTO_IMPORT_TENANT_NAME = "Auto-Import"
 AUTO_IMPORT_TENANT_SLUG = "auto-import"
@@ -22,6 +25,31 @@ def is_tenant_relation(field) -> bool:
         return False
     related_model = getattr(field.remote_field, "model", None)
     return getattr(getattr(related_model, "_meta", None), "label_lower", None) == "tenancy.tenant"
+
+
+def _condition_field_names(condition):
+    for child in getattr(condition, "children", ()):
+        if isinstance(child, tuple):
+            yield child[0].split("__", 1)[0]
+        else:
+            yield from _condition_field_names(child)
+
+
+@cache
+def check_constraint_field_names(model) -> frozenset[str]:
+    if model is None:
+        return frozenset()
+    names = set()
+    for constraint in model._meta.constraints:
+        if isinstance(constraint, models.CheckConstraint):
+            names.update(_condition_field_names(constraint.condition))
+    return frozenset(names)
+
+
+def relation_required_before_save(field) -> bool:
+    return is_tenant_relation(field) or field.name in check_constraint_field_names(
+        getattr(field, "model", None)
+    )
 
 
 class PluginCompatibility:

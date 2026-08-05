@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django.db import models
 
 from netbox_export.services.importer import _field_kwargs
@@ -14,6 +16,24 @@ class TenantManagedObject(models.Model):
 
     class Meta:
         app_label = "compat_tests"
+
+
+class Platform(models.Model):
+    class Meta:
+        app_label = "compat_tests"
+
+
+class ConstrainedInstallation(models.Model):
+    platform = models.ForeignKey(Platform, on_delete=models.PROTECT, null=True)
+
+    class Meta:
+        app_label = "compat_tests"
+        constraints: ClassVar[list] = [
+            models.CheckConstraint(
+                condition=models.Q(platform__isnull=False),
+                name="compat_tests_installation_platform",
+            )
+        ]
 
 
 def tenant_record():
@@ -45,6 +65,26 @@ def test_unresolved_tenant_also_blocks_when_policy_detection_is_unavailable():
     kwargs, unresolved, unresolved_values, missing_required = _field_kwargs(
         TenantManagedObject,
         tenant_record(),
+        resolver,
+        tenant_required=False,
+    )
+
+    assert kwargs is None
+    assert unresolved == []
+    assert unresolved_values == []
+    assert missing_required == []
+
+
+def test_unresolved_relation_in_check_constraint_blocks_initial_save():
+    resolver = ReferenceResolver({}, [], lambda label: None)
+    record = {
+        "fields": {},
+        "relations": {"platform": {"ref": "compat_tests.platform:5"}},
+    }
+
+    kwargs, unresolved, unresolved_values, missing_required = _field_kwargs(
+        ConstrainedInstallation,
+        record,
         resolver,
         tenant_required=False,
     )

@@ -116,6 +116,9 @@ erzwungene Mandantenpflicht wird beim Import berücksichtigt: Das Zielobjekt wir
 erst gespeichert, nachdem sein Mandant importiert und zugeordnet wurde. Ist kein
 Mandant auflösbar, wird automatisch ein vorhandener Mandant `Auto-Import`
 verwendet oder neu angelegt. Der Importbericht weist darauf hin.
+Beziehungen, die Teil einer Plugin-Datenbankprüfung sind, werden vollständig
+aufgelöst, bevor das Objekt erstmals gespeichert wird. Dies betrifft unter
+anderem die Plattformzuordnung von NetBox-SLM-Softwareinstallationen.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei

@@ -19,6 +19,7 @@ from .exceptions import ArchiveValidationError, ExportImportError, ImportConflic
 from .plugin_compat import (
     PluginCompatibility,
     is_tenant_relation,
+    relation_required_before_save,
 )
 from .references import MISSING_REFERENCE, ReferenceResolver
 
@@ -245,16 +246,19 @@ def _field_kwargs(model, record, resolver, *, tenant_required: bool):
         if not isinstance(field, (models.ForeignKey, models.OneToOneField)):
             continue
         tenant_relation = is_tenant_relation(field)
+        required_before_save = relation_required_before_save(field)
         value, available = resolver.resolve(spec)
         if available:
             if value is MISSING_REFERENCE:
-                if not field.null and not field.has_default():
+                if (required_before_save and not tenant_relation) or (
+                    not field.null and not field.has_default() and not tenant_relation
+                ):
                     missing_required.append(name)
             elif value is None and tenant_relation and tenant_required:
                 continue
             else:
                 kwargs[name] = value
-        elif field.null and not tenant_relation:
+        elif field.null and not required_before_save:
             unresolved.append((name, spec))
         else:
             return None, [], [], []

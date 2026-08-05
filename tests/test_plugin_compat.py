@@ -1,11 +1,14 @@
 from types import SimpleNamespace
 
 from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.db import models
 
 from netbox_export.services.plugin_compat import (
     MISSING_TENANT_MESSAGE,
     PluginCompatibility,
+    check_constraint_field_names,
     is_tenant_relation,
+    relation_required_before_save,
 )
 
 
@@ -80,6 +83,22 @@ class TenantRequiredObject:
 def test_identifies_tenant_relation():
     assert is_tenant_relation(relation_field()) is True
     assert is_tenant_relation(relation_field("site", "dcim.site")) is False
+
+
+def test_identifies_relations_used_by_check_constraint():
+    constraint = models.CheckConstraint(
+        condition=(
+            models.Q(device__isnull=False, virtualmachine__isnull=True)
+            | models.Q(device__isnull=True, virtualmachine__isnull=False)
+        ),
+        name="platform",
+    )
+    model = type("ConstrainedModel", (), {"_meta": SimpleNamespace(constraints=[constraint])})
+    field = relation_field("device", "dcim.device")
+    field.model = model
+
+    assert check_constraint_field_names(model) == frozenset({"device", "virtualmachine"})
+    assert relation_required_before_save(field) is True
 
 
 def test_creates_and_assigns_auto_import_tenant_when_policy_is_active():

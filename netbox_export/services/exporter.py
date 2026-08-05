@@ -39,7 +39,7 @@ def export_scope(
         "created_at": datetime.now(UTC).isoformat(),
         "source_instance": str(InstanceIdentity.local_id()),
         "source_netbox_version": getattr(getattr(settings, "RELEASE", None), "version", "4.6"),
-        "plugin_version": "0.3.4",
+        "plugin_version": "0.3.5",
         "scope": {
             "type": scope_type,
             "source_pk": str(scope_id),
