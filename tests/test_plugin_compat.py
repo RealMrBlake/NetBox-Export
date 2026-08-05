@@ -9,6 +9,7 @@ from netbox_export.services.plugin_compat import (
     check_constraint_field_names,
     is_tenant_relation,
     relation_required_before_save,
+    relation_should_be_deferred,
 )
 
 
@@ -99,6 +100,34 @@ def test_identifies_relations_used_by_check_constraint():
 
     assert check_constraint_field_names(model) == frozenset({"device", "virtualmachine"})
     assert relation_required_before_save(field) is True
+
+
+def test_nullable_unique_relation_is_deferred_unless_required_by_constraint():
+    regular = relation_field("primary_ip6", "ipam.ipaddress")
+    regular.null = True
+    regular.unique = True
+    regular.model = type(
+        "VirtualMachine",
+        (),
+        {"_meta": SimpleNamespace(constraints=[])},
+    )
+
+    assert relation_should_be_deferred(regular) is True
+
+    constrained = relation_field("platform", "dcim.device")
+    constrained.null = True
+    constrained.unique = True
+    constraint = models.CheckConstraint(
+        condition=models.Q(platform__isnull=False),
+        name="platform_required",
+    )
+    constrained.model = type(
+        "Installation",
+        (),
+        {"_meta": SimpleNamespace(constraints=[constraint])},
+    )
+
+    assert relation_should_be_deferred(constrained) is False
 
 
 def test_creates_and_assigns_auto_import_tenant_when_policy_is_active():

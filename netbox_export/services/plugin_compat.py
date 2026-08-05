@@ -52,6 +52,10 @@ def relation_required_before_save(field) -> bool:
     )
 
 
+def relation_should_be_deferred(field) -> bool:
+    return bool(field.null and field.unique and not relation_required_before_save(field))
+
+
 class PluginCompatibility:
     def __init__(
         self,
@@ -131,3 +135,22 @@ class PluginCompatibility:
             if not self._is_missing_tenant_error(exc) or not self._assign_fallback_tenant(obj, force=True):
                 raise
             return obj.save(**kwargs)
+
+    def release_unique_relation(self, obj, field_name: str, value):
+        field = obj._meta.get_field(field_name)
+        if value is None or not relation_should_be_deferred(field):
+            return
+
+        conflicts = type(obj)._default_manager.filter(**{field.attname: value.pk})
+        if obj.pk is not None:
+            conflicts = conflicts.exclude(pk=obj.pk)
+        conflict_ids = list(conflicts.values_list("pk", flat=True))
+        if not conflict_ids:
+            return
+
+        type(obj)._default_manager.filter(pk__in=conflict_ids).update(**{field.attname: None})
+        identifiers = ", ".join(str(pk) for pk in conflict_ids)
+        self.warnings.append(
+            f"Eindeutige Referenz {obj._meta.label_lower}.{field_name} wurde von Zielobjekt(en) "
+            f"{identifiers} gelöst und dem importierten Objekt neu zugeordnet."
+        )

@@ -20,6 +20,7 @@ from .plugin_compat import (
     PluginCompatibility,
     is_tenant_relation,
     relation_required_before_save,
+    relation_should_be_deferred,
 )
 from .references import MISSING_REFERENCE, ReferenceResolver
 
@@ -256,6 +257,8 @@ def _field_kwargs(model, record, resolver, *, tenant_required: bool):
                     missing_required.append(name)
             elif value is None and tenant_relation and tenant_required:
                 continue
+            elif value is not None and relation_should_be_deferred(field):
+                unresolved.append((name, spec))
             else:
                 kwargs[name] = value
         elif field.null and not required_before_save:
@@ -431,6 +434,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 if value is MISSING_REFERENCE:
                     continue
                 obj = resolved[record_id]
+                compatibility.release_unique_relation(obj, name, value)
                 setattr(obj, name, value)
                 compatibility.save(obj, update_fields=[name])
 

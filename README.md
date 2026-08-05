@@ -119,6 +119,9 @@ verwendet oder neu angelegt. Der Importbericht weist darauf hin.
 Beziehungen, die Teil einer Plugin-Datenbankprüfung sind, werden vollständig
 aufgelöst, bevor das Objekt erstmals gespeichert wird. Dies betrifft unter
 anderem die Plattformzuordnung von NetBox-SLM-Softwareinstallationen.
+Eindeutige optionale Beziehungen wie die primären IP-Adressen von Geräten und
+virtuellen Maschinen werden in einer zweiten Phase zugewiesen. Eine veraltete
+Zielzuordnung wird dabei atomar gelöst und als Warnung protokolliert.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei
