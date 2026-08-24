@@ -135,6 +135,12 @@ Belegungen löst **Aktualisieren** das Zielgerät mit Warnung von seiner Positio
 **Überspringen** lässt das importierte Gerät positionslos und **Import abbrechen**
 meldet den Rackplatzkonflikt vor dem Datenbankfehler. Mehr-U- und
 Full-Depth-Belegungen werden dabei berücksichtigt.
+Front-/Rear-Port-Zuordnungen von Patchpanels werden als eigene Datensätze
+exportiert und bei **Aktualisieren** auf den Stand der Quelle gebracht. Nach dem
+Import stößt das Plugin für alle enthaltenen Kabel die NetBox-eigene
+Neuberechnung der Kabelpfade an. Für diese Korrektur muss mit Plugin-Version
+`0.3.12` oder neuer ein neues Archiv auf der Quellinstanz erzeugt werden, da
+ältere Archive keine Portzuordnungen enthalten.
 Bei Bildanhängen werden Breite und Höhe direkt aus der Bilddatei im Archiv
 ermittelt. Dadurch sind die Pflichtfelder von NetBox auch im Prüflauf und bei
 Dateispeichern ohne unmittelbaren Modell-Save gesetzt. Bilder oberhalb des in

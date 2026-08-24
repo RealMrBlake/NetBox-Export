@@ -46,6 +46,7 @@ EXPLICIT_IDENTITIES = {
     "dcim.poweroutlet": ("device", "name"),
     "dcim.frontport": ("device", "name"),
     "dcim.rearport": ("device", "name"),
+    "dcim.portmapping": ("front_port", "front_port_position"),
     "dcim.devicebay": ("device", "name"),
     "dcim.modulebay": ("device", "module", "name"),
     "dcim.inventoryitem": ("device", "parent", "name"),
@@ -390,6 +391,60 @@ def _write_mapping(source_instance, record, obj):
     )
 
 
+def _release_port_mapping_conflicts(obj, resolver, record_id):
+    if obj._meta.label_lower != "dcim.portmapping":
+        return
+
+    conflicts = type(obj)._default_manager.select_for_update().filter(
+        models.Q(
+            front_port_id=obj.front_port_id,
+            front_port_position=obj.front_port_position,
+        )
+        | models.Q(
+            rear_port_id=obj.rear_port_id,
+            rear_port_position=obj.rear_port_position,
+        )
+    )
+    if obj.pk is not None:
+        conflicts = conflicts.exclude(pk=obj.pk)
+    conflicts = list(conflicts)
+    if not conflicts:
+        return
+
+    conflict_ids = ", ".join(str(conflict.pk) for conflict in conflicts)
+    for conflict in conflicts:
+        conflict.delete()
+    resolver.warn(
+        ("port-mapping-replaced", record_id),
+        f"Portzuordnung(en) {conflict_ids} wurden durch {record_id} ersetzt, damit die "
+        "Front-/Rear-Port-Verkabelung der Quelle entspricht.",
+    )
+
+
+def _trace_paths_signal():
+    from dcim.models.cables import trace_paths
+
+    return trace_paths
+
+
+def _rebuild_imported_cable_paths(records, resolved):
+    cable_ids = {
+        resolved[record_id].cable_id
+        for record_id, record in records.items()
+        if record["model"] == "dcim.cabletermination" and record_id in resolved
+    }
+    if not cable_ids:
+        return
+
+    cable_model = _model_for("dcim.cable")
+    trace_paths = _trace_paths_signal()
+    for cable in cable_model._default_manager.filter(pk__in=cable_ids).order_by("pk"):
+        # CableTermination records are imported directly, so Cable.save() never
+        # emits NetBox's normal path-rebuild signal for their new endpoints.
+        cable._terminations_modified = True
+        trace_paths.send(cable_model, instance=cable, created=False)
+
+
 def _field_kwargs(model, record, resolver, *, tenant_required: bool):
     valid_fields = {field.name: field for field in model._meta.concrete_fields}
     kwargs = {}
@@ -699,6 +754,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                         if device_placement is not None:
                             _stage_device_placement(obj)
                         compatibility.prepare_initial_save(obj, is_new=existing is None)
+                        _release_port_mapping_conflicts(obj, resolver, record_id)
                         compatibility.save(obj)
                         action = "updated" if existing is not None else "created"
                         writable.add(record_id)
@@ -769,6 +825,8 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
             for record_id, record in records.items():
                 if record_id in writable:
                     _apply_m2m(resolved[record_id], record, resolver)
+
+            _rebuild_imported_cable_paths(records, resolved)
 
             if dry_run:
                 transaction.set_rollback(True)

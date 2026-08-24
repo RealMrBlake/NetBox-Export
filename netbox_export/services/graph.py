@@ -31,6 +31,11 @@ EXCLUDED_MODELS = {
 }
 SCOPE_LINK_FIELDS = {"tenant", "site", "location", "region"}
 PEER_CONTAINER_MODELS = {"dcim.cable", "circuits.circuit", "circuits.virtualcircuit"}
+PRIVATE_EXPORTABLE_MODELS = {
+    # NetBox derives cable paths from these mappings, but marks the model private
+    # because it has no public API of its own.
+    "dcim.portmapping",
+}
 
 
 def is_exportable_model(model) -> bool:
@@ -40,7 +45,10 @@ def is_exportable_model(model) -> bool:
         and not opts.abstract
         and not opts.proxy
         and not opts.auto_created
-        and not getattr(model, "_netbox_private", False)
+        and (
+            not getattr(model, "_netbox_private", False)
+            or opts.label_lower in PRIVATE_EXPORTABLE_MODELS
+        )
         and opts.app_label not in EXCLUDED_APP_LABELS
         and opts.label_lower not in EXCLUDED_MODELS
     )

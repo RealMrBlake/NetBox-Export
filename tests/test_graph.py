@@ -43,8 +43,27 @@ class PrivateGraphModel(models.Model):
         app_label = "graph_tests"
 
 
+class PortMapping(models.Model):
+    _netbox_private = True
+
+    class Meta:
+        app_label = "dcim"
+
+
+class CablePath(models.Model):
+    _netbox_private = True
+
+    class Meta:
+        app_label = "dcim"
+
+
 def test_private_plugin_models_are_not_exportable():
     assert graph_module.is_exportable_model(PrivateGraphModel) is False
+
+
+def test_private_port_mappings_are_exported_but_cable_paths_are_not():
+    assert graph_module.is_exportable_model(PortMapping) is True
+    assert graph_module.is_exportable_model(CablePath) is False
 
 
 def test_batched_graph_collects_members_and_dependencies(monkeypatch):
