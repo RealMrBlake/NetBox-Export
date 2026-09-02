@@ -28,6 +28,19 @@ def model_label(model) -> str:
     return model._meta.label_lower
 
 
+def is_range_value(value) -> bool:
+    return all(
+        hasattr(value, attribute)
+        for attribute in ("lower", "upper", "lower_inc", "upper_inc", "isempty")
+    )
+
+
+def _make_range(lower, upper, bounds, empty):
+    from django.db.backends.postgresql.psycopg_any import Range
+
+    return Range(lower, upper, bounds, empty=empty)
+
+
 def encode_scalar(value):
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
@@ -45,6 +58,15 @@ def encode_scalar(value):
         return {"$type": "duration", "value": value.total_seconds()}
     if isinstance(value, bytes):
         return {"$type": "bytes", "value": base64.b64encode(value).decode("ascii")}
+    if is_range_value(value):
+        bounds = ("[" if value.lower_inc else "(") + ("]" if value.upper_inc else ")")
+        return {
+            "$type": "range",
+            "lower": encode_scalar(value.lower),
+            "upper": encode_scalar(value.upper),
+            "bounds": bounds,
+            "empty": value.isempty,
+        }
     if isinstance(value, (list, tuple)):
         return [encode_scalar(item) for item in value]
     if isinstance(value, dict):
@@ -61,6 +83,13 @@ def decode_scalar(value):
         return value
     kind = value["$type"]
     raw = value.get("value")
+    if kind == "range":
+        return _make_range(
+            decode_scalar(value.get("lower")),
+            decode_scalar(value.get("upper")),
+            value.get("bounds", "[)"),
+            bool(value.get("empty", False)),
+        )
     decoders = {
         "decimal": decimal.Decimal,
         "uuid": uuid.UUID,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import math
+import re
 import threading
 import uuid
 import warnings
@@ -20,7 +22,7 @@ from PIL import Image as PillowImage
 from netbox_export.models import ImportedObjectMapping
 
 from .archive import ParsedArchive
-from .codec import SKIP_FIELD_NAMES, decode_scalar, generic_foreign_keys
+from .codec import SKIP_FIELD_NAMES, decode_scalar, generic_foreign_keys, is_range_value
 from .exceptions import ArchiveValidationError, ExportImportError, ImportConflictError
 from .plugin_compat import (
     PluginCompatibility,
@@ -62,6 +64,7 @@ NETBOX_IMAGE_MAX_PIXELS = 25_000_000
 IMPORTED_IMAGE_TARGET_PIXELS = 20_000_000
 IMPORTED_IMAGE_SOURCE_MAX_PIXELS = 100_000_000
 _IMAGE_LIMIT_LOCK = threading.Lock()
+_LEGACY_RANGE_PATTERN = re.compile(r"^([\[(])(.*),(.*)([\])])$")
 
 
 class IdentityNotReady(Exception):
@@ -129,6 +132,44 @@ def _decode_archived_value(encoded, resolver):
             all_available &= available
         return value, all_available
     return decode_scalar(encoded), True
+
+
+def _range_endpoint(field, value):
+    value = value.strip()
+    if not value:
+        return None
+    if value.startswith('"') and value.endswith('"'):
+        value = json.loads(value)
+    return field.base_field.to_python(value)
+
+
+def _coerce_range_value(field, value):
+    if value is None or is_range_value(value):
+        return value
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return field.range_type(value[0], value[1])
+    if value == "empty":
+        return field.range_type(empty=True)
+    if not isinstance(value, str) or not (match := _LEGACY_RANGE_PATTERN.fullmatch(value.strip())):
+        return value
+    bounds = match.group(1) + match.group(4)
+    lower = _range_endpoint(field, match.group(2))
+    upper = _range_endpoint(field, match.group(3))
+    return field.range_type(lower, upper, bounds=bounds)
+
+
+def _coerce_model_field_value(field, value):
+    if hasattr(field, "range_type") and hasattr(field, "base_field"):
+        return _coerce_range_value(field, value)
+    base_field = getattr(field, "base_field", None)
+    if (
+        isinstance(value, (list, tuple))
+        and base_field is not None
+        and hasattr(base_field, "range_type")
+        and hasattr(base_field, "base_field")
+    ):
+        return [_coerce_range_value(base_field, item) for item in value]
+    return value
 
 
 def _identity_candidates(model):
@@ -465,7 +506,7 @@ def _field_kwargs(model, record, resolver, *, tenant_required: bool):
             continue
         value, available = _decode_archived_value(encoded, resolver)
         if available:
-            kwargs[name] = value
+            kwargs[name] = _coerce_model_field_value(field, value)
         elif name in ("custom_field_data", "default"):
             kwargs[name] = value if value is not None else ({} if name == "custom_field_data" else None)
             unresolved_values.append((name, encoded))

@@ -141,6 +141,9 @@ Import stößt das Plugin für alle enthaltenen Kabel die NetBox-eigene
 Neuberechnung der Kabelpfade an. Für diese Korrektur muss mit Plugin-Version
 `0.3.12` oder neuer ein neues Archiv auf der Quellinstanz erzeugt werden, da
 ältere Archive keine Portzuordnungen enthalten.
+PostgreSQL-Range-Felder, darunter die erlaubten VLAN-ID-Bereiche einer
+VLAN-Gruppe, werden typisiert im Archiv gespeichert. Der Import erkennt auch
+die von älteren Plugin-Versionen als Text exportierten Range-Werte.
 Bei Bildanhängen werden Breite und Höhe direkt aus der Bilddatei im Archiv
 ermittelt. Dadurch sind die Pflichtfelder von NetBox auch im Prüflauf und bei
 Dateispeichern ohne unmittelbaren Modell-Save gesetzt. Bilder oberhalb des in
