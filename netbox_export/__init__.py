@@ -7,11 +7,11 @@ class NetBoxExportConfig(PluginConfig):
     name = "netbox_export"
     verbose_name = "NetBox-Export"
     description = "Portable ZIP export and import for tenants and locations"
-    version = "0.3.13"
-    author = "NetBox Export contributors"
+    version = "0.3.14"
+    author = "Codex & Claude"
     base_url = "netbox-export"
     min_version = "4.6.0"
-    max_version = "4.6.99"
+    max_version = "4.7.99"
     required_settings: ClassVar[list[str]] = []
     default_settings: ClassVar[dict] = {
         "max_objects": 50000,

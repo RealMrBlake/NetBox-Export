@@ -1,6 +1,6 @@
 # NetBox-Export
 
-NetBox-Export ist ein Plugin für NetBox 4.6.x. Es exportiert einen abgegrenzten
+NetBox-Export ist ein Plugin für NetBox 4.6.x und 4.7.x. Es exportiert einen abgegrenzten
 Mandanten- oder Standortbereich als portables ZIP-Archiv und importiert ihn in
 eine zweite NetBox-Instanz.
 
@@ -91,7 +91,7 @@ Import werden vorhandene Objekte über ihre eindeutigen Fachschlüssel erkannt.
 
 ## Verhalten und Grenzen
 
-- Quelle und Ziel müssen NetBox 4.6.x und dieselben Plugins/Modelle verwenden.
+- Quelle und Ziel müssen dieselbe unterstützte NetBox-Version (4.6.x oder 4.7.x) und dieselben Plugins/Modelle verwenden.
 - Benutzerkonten und Berechtigungen werden nicht exportiert. Fehlende oder
   nicht eindeutige Referenzen auf Benutzer und Gruppen werden ausgelassen und
   nach dem Import als Warnung angezeigt. Benötigt ein neuer Datensatz zwingend
@@ -146,8 +146,8 @@ VLAN-Gruppe, werden typisiert im Archiv gespeichert. Der Import erkennt auch
 die von älteren Plugin-Versionen als Text exportierten Range-Werte.
 Bei Bildanhängen werden Breite und Höhe direkt aus der Bilddatei im Archiv
 ermittelt. Dadurch sind die Pflichtfelder von NetBox auch im Prüflauf und bei
-Dateispeichern ohne unmittelbaren Modell-Save gesetzt. Bilder oberhalb des in
-NetBox 4.6.x verwendeten Limits von 25 Millionen Pixeln werden proportional auf
+Dateispeichern ohne unmittelbaren Modell-Save gesetzt. Bilder oberhalb des von
+NetBox verwendeten Limits von 25 Millionen Pixeln werden proportional auf
 höchstens 20 Millionen Pixel verkleinert und im Importbericht als Warnung
 ausgewiesen. Zum Schutz des Importprozesses bleibt eine harte Quellgrenze von
 100 Millionen Pixeln bestehen.
