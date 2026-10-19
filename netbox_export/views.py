@@ -78,6 +78,7 @@ class DashboardView(UserPassesTestMixin, View):
                 parsed,
                 conflict_strategy=form.cleaned_data["conflict_strategy"],
                 dry_run=form.cleaned_data["dry_run"],
+                force=form.cleaned_data["force"],
             )
         except ExportImportError as exc:
             form.add_error(None, str(exc))

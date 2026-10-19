@@ -57,6 +57,15 @@ class ImportForm(forms.Form):
         initial=True,
         help_text="Führt den vollständigen Import aus und setzt die Datenbanktransaktion anschließend zurück.",
     )
+    force = forms.BooleanField(
+        label="Force-Modus (Fehler überspringen)",
+        required=False,
+        initial=False,
+        help_text=(
+            "Objekte, deren Import fehlschlägt, werden einzeln übersprungen, statt den gesamten Import "
+            "zurückzurollen. Übersprungene Objekte werden im Bericht als Warnung aufgeführt."
+        ),
+    )
     confirm_apply = forms.BooleanField(
         label="Ich bestätige den schreibenden Import",
         required=False,

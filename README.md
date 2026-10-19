@@ -160,6 +160,12 @@ conflict strategy **Update** first uses the stored mapping of source instance,
 model and source ID; on a first import, existing objects are matched by their
 unique natural keys.
 
+**Force mode** skips objects whose import fails (database errors, unresolvable
+references, failing plugin validation) instead of rolling back the whole
+import. Each failing object is rolled back individually via a savepoint and
+listed as a warning in the import report; references to it are omitted. The
+conflict strategy **Abort import** still aborts on existing objects.
+
 ### Behaviour and limits
 
 - User accounts and permissions are not exported. Missing or ambiguous user and

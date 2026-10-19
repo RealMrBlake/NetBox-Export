@@ -594,11 +594,14 @@ def _set_generic_relations(obj, record, resolver, *, allow_deferred: bool):
             continue
         value, available = resolver.resolve(spec)
         if available:
-            if value is MISSING_REFERENCE:
+            if value is MISSING_REFERENCE or value is None:
+                # A dangling generic reference is exported as None.
                 ct_field = obj._meta.get_field(field.ct_field)
                 id_field = obj._meta.get_field(field.fk_field)
                 if not ct_field.null or not id_field.null:
                     missing_required.append(name)
+                elif value is None:
+                    setattr(obj, name, None)
             else:
                 setattr(obj, name, value)
         elif allow_deferred:
@@ -752,6 +755,36 @@ def _apply_m2m(obj, record, resolver):
         manager.set(values)
 
 
+def _save_record(obj, resolver, record_id, compatibility, *, force: bool):
+    if not force:
+        _release_port_mapping_conflicts(obj, resolver, record_id)
+        compatibility.save(obj)
+        return
+    with transaction.atomic():
+        _release_port_mapping_conflicts(obj, resolver, record_id)
+        compatibility.save(obj)
+
+
+def _apply_deferred_relation(obj, name, value, compatibility):
+    compatibility.release_unique_relation(obj, name, value)
+    setattr(obj, name, value)
+    compatibility.save(obj, update_fields=[name])
+
+
+def _forced(force, warnings, label, func, *args, **kwargs):
+    """Run func; in force mode roll back only its savepoint and record a warning on error."""
+    if not force:
+        return func(*args, **kwargs)
+    try:
+        with transaction.atomic():
+            return func(*args, **kwargs)
+    except ImportConflictError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - force mode skips any failing step
+        warnings.append(f"Force-Modus: {label} wurde wegen eines Fehlers übersprungen: {exc}")
+        return None
+
+
 def _skip_uninstalled_optional_models(records, resolver, report):
     """Drop records of optional plugins which are not installed on the target."""
     missing_labels = set()
@@ -773,7 +806,9 @@ def _skip_uninstalled_optional_models(records, resolver, report):
         )
 
 
-def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bool) -> ImportReport:
+def import_archive(
+    parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bool, force: bool = False
+) -> ImportReport:
     if conflict_strategy not in ("update", "skip", "fail"):
         raise ArchiveValidationError("Unbekannte Konfliktstrategie.")
     source_version = str(parsed.manifest.get("source_netbox_version", ""))
@@ -863,8 +898,19 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                         if device_placement is not None:
                             _stage_device_placement(obj)
                         compatibility.prepare_initial_save(obj, is_new=existing is None)
-                        _release_port_mapping_conflicts(obj, resolver, record_id)
-                        compatibility.save(obj)
+                        try:
+                            _save_record(obj, resolver, record_id, compatibility, force=force)
+                        except Exception as exc:
+                            if not force or isinstance(exc, ImportConflictError):
+                                raise
+                            resolver.skipped.add(record_id)
+                            report.warnings.append(
+                                f"Force-Modus: {record_id} wurde wegen eines Fehlers übersprungen: {exc}"
+                            )
+                            report.add(record["model"], "skipped")
+                            pending.pop(record_id)
+                            progressed = True
+                            continue
                         action = "updated" if existing is not None else "created"
                         writable.add(record_id)
                         deferred_relations.extend((record_id, name, spec) for name, spec in unresolved)
@@ -883,6 +929,15 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                     progressed = True
                 if not progressed:
                     blocked = ", ".join(list(pending)[:10])
+                    if force:
+                        for record_id, record in pending.items():
+                            resolver.skipped.add(record_id)
+                            report.add(record["model"], "skipped")
+                        report.warnings.append(
+                            f"Force-Modus: {len(pending)} Objekt(e) mit nicht auflösbaren Referenzen "
+                            f"wurden übersprungen: {blocked}"
+                        )
+                        break
                     raise ArchiveValidationError(
                         f"Erforderliche Referenzen konnten nicht aufgelöst werden: {blocked}"
                     )
@@ -895,10 +950,16 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                     raise ArchiveValidationError(f"Referenz {name} für {record_id} konnte nicht aufgelöst werden.")
                 if value is MISSING_REFERENCE:
                     continue
-                obj = resolved[record_id]
-                compatibility.release_unique_relation(obj, name, value)
-                setattr(obj, name, value)
-                compatibility.save(obj, update_fields=[name])
+                _forced(
+                    force,
+                    report.warnings,
+                    f"Referenz {name} für {record_id}",
+                    _apply_deferred_relation,
+                    resolved[record_id],
+                    name,
+                    value,
+                    compatibility,
+                )
 
             for record_id, name, spec in deferred_generic:
                 if record_id not in writable:
@@ -911,7 +972,14 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                 obj = resolved[record_id]
                 setattr(obj, name, value)
                 field = next(field for field in generic_foreign_keys(type(obj)) if field.name == name)
-                compatibility.save(obj, update_fields=[field.ct_field, field.fk_field])
+                _forced(
+                    force,
+                    report.warnings,
+                    f"Generische Referenz {name} für {record_id}",
+                    compatibility.save,
+                    obj,
+                    update_fields=[field.ct_field, field.fk_field],
+                )
 
             for record_id, name, encoded in deferred_values:
                 if record_id not in writable:
@@ -921,9 +989,20 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
                     raise ArchiveValidationError(f"Custom-Field-Referenz {name} für {record_id} fehlt.")
                 obj = resolved[record_id]
                 setattr(obj, name, value)
-                compatibility.save(obj, update_fields=[name])
+                _forced(
+                    force,
+                    report.warnings,
+                    f"Custom-Field-Wert {name} für {record_id}",
+                    compatibility.save,
+                    obj,
+                    update_fields=[name],
+                )
 
-            _apply_device_placements(
+            _forced(
+                force,
+                report.warnings,
+                "Rackplatzierung der Geräte",
+                _apply_device_placements,
                 deferred_device_placements,
                 resolved,
                 resolver,
@@ -932,10 +1011,25 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
             )
 
             for record_id, record in records.items():
-                if record_id in writable:
-                    _apply_m2m(resolved[record_id], record, resolver)
+                if record_id in writable and record_id not in resolver.skipped:
+                    _forced(
+                        force,
+                        report.warnings,
+                        f"Mehrfachzuordnungen für {record_id}",
+                        _apply_m2m,
+                        resolved[record_id],
+                        record,
+                        resolver,
+                    )
 
-            _rebuild_imported_cable_paths(records, resolved)
+            _forced(
+                force,
+                report.warnings,
+                "Neuberechnung der Kabelpfade",
+                _rebuild_imported_cable_paths,
+                records,
+                resolved,
+            )
 
             if dry_run:
                 transaction.set_rollback(True)
