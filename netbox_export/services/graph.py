@@ -246,7 +246,10 @@ class ObjectGraph:
         )
         for object_batch in _chunks(objects, self.query_batch_size):
             object_ids = [obj.pk for obj in object_batch]
-            queryset = model._default_manager.filter(pk__in=object_ids).select_related(*foreign_keys).order_by("pk")
+            queryset = model._default_manager.filter(pk__in=object_ids).order_by("pk")
+            if foreign_keys:
+                # select_related() without arguments is deprecated since Django 6.1.
+                queryset = queryset.select_related(*foreign_keys)
             if prefetch_fields:
                 queryset = queryset.prefetch_related(*prefetch_fields)
             yield from queryset.iterator(chunk_size=self.query_batch_size)

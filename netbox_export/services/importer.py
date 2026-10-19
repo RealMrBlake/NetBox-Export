@@ -57,6 +57,7 @@ EXPLICIT_IDENTITIES = {
     "dcim.inventoryitem": ("device", "parent", "name"),
     "ipam.prefix": ("vrf", "prefix"),
     "ipam.ipaddress": ("vrf", "address"),
+    "ipam.iprange": ("vrf", "start_address", "end_address"),
     "ipam.vlan": ("group", "vid"),
     "circuits.circuit": ("provider", "cid"),
     "virtualization.virtualmachine": ("cluster", "tenant", "name"),
@@ -172,7 +173,14 @@ def _coerce_model_field_value(field, value):
         and hasattr(base_field, "base_field")
     ):
         return [_coerce_range_value(base_field, item) for item in value]
+    if isinstance(value, str) and _is_netbox_ip_field(field):
+        # IPRange.save() computes its size from start_address.ip, so plain strings are not enough.
+        return field.to_python(value)
     return value
+
+
+def _is_netbox_ip_field(field):
+    return any(cls.__name__ == "BaseIPField" for cls in type(field).__mro__)
 
 
 def _identity_candidates(model):
