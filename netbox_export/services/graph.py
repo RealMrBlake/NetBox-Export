@@ -37,6 +37,13 @@ PRIVATE_EXPORTABLE_MODELS = {
     "dcim.portmapping",
 }
 
+# Optional plugin models that extend a dependency (e.g. a device type) one-to-one.
+# They are exported together with that dependency even though it is not a member.
+DEPENDENCY_EXTENSION_MODELS = {
+    # NetBox Utilities: disk bay template of a device type.
+    "netbox_utilities.diskbaytemplate",
+}
+
 
 def is_exportable_model(model) -> bool:
     opts = model._meta
@@ -104,7 +111,12 @@ class ObjectGraph:
         self.dependencies: dict[str, models.Model] = {}
         self._custom_field_cache = {}
         self._models = exportable_models()
-        self._reverse_fields, self._generic_fields, self._peer_fields = self._build_relation_indexes()
+        (
+            self._reverse_fields,
+            self._generic_fields,
+            self._peer_fields,
+            self._extension_fields,
+        ) = self._build_relation_indexes()
 
     @property
     def objects(self) -> dict[str, models.Model]:
@@ -114,6 +126,7 @@ class ObjectGraph:
         reverse_fields = defaultdict(lambda: defaultdict(list))
         generic_fields = defaultdict(list)
         peer_fields = defaultdict(list)
+        extension_fields = defaultdict(list)
         for candidate_model in self._models:
             for relation_field in candidate_model._meta.concrete_fields:
                 if not isinstance(relation_field, (models.ForeignKey, models.OneToOneField)):
@@ -126,10 +139,15 @@ class ObjectGraph:
                     reverse_fields[related_model][candidate_model].append(relation_field)
                 if related_model._meta.label_lower in PEER_CONTAINER_MODELS:
                     peer_fields[candidate_model].append(relation_field)
+                if (
+                    candidate_model._meta.label_lower in DEPENDENCY_EXTENSION_MODELS
+                    and isinstance(relation_field, models.OneToOneField)
+                ):
+                    extension_fields[related_model].append((candidate_model, relation_field))
             for generic_field in candidate_model._meta.private_fields:
                 if isinstance(generic_field, GenericForeignKey):
                     generic_fields[candidate_model].append(generic_field)
-        return reverse_fields, generic_fields, peer_fields
+        return reverse_fields, generic_fields, peer_fields, extension_fields
 
     def _check_limit(self):
         object_count = len(self.members) + len(self.dependencies)
@@ -289,6 +307,14 @@ class ObjectGraph:
                     chunk_size=self.query_batch_size
                 )
 
+    def _extension_objects(self, model, objects):
+        object_ids = [obj.pk for obj in objects]
+        for extension_model, relation_field in self._extension_fields.get(model, ()):
+            for id_batch in _chunks(object_ids, self.query_batch_size):
+                yield from extension_model._default_manager.filter(
+                    **{f"{relation_field.attname}__in": id_batch}
+                ).iterator(chunk_size=self.query_batch_size)
+
     def _collect_dependencies(self):
         pending = dict(self.members)
         scanned = set()
@@ -297,6 +323,9 @@ class ObjectGraph:
             for model, objects in self._group_by_model(pending.values()).items():
                 custom_fields = self.custom_fields_for_model(model)
                 loaded_objects = list(self._load_objects(model, objects))
+                for extension in self._extension_objects(model, loaded_objects):
+                    if self.add_dependency(extension):
+                        next_pending[object_key(extension)] = extension
                 for related in self._custom_value_dependencies(loaded_objects, custom_fields):
                     if self.add_dependency(related):
                         next_pending[object_key(related)] = related

@@ -17,6 +17,7 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, models, transaction
+from django.db.models import Value
 from PIL import Image as PillowImage
 
 from netbox_export.models import ImportedObjectMapping
@@ -26,6 +27,8 @@ from .codec import SKIP_FIELD_NAMES, decode_scalar, generic_foreign_keys, is_ran
 from .exceptions import ArchiveValidationError, ExportImportError, ImportConflictError
 from .plugin_compat import (
     PluginCompatibility,
+    condition_field_names,
+    is_optional_plugin_model,
     is_tenant_relation,
     relation_required_before_save,
     relation_should_be_deferred,
@@ -183,7 +186,35 @@ def _identity_candidates(model):
         yield from model._meta.unique_together
     for constraint in model._meta.constraints:
         if isinstance(constraint, models.UniqueConstraint) and constraint.fields:
-            yield tuple(constraint.fields)
+            if constraint.condition is None:
+                yield tuple(constraint.fields)
+            else:
+                yield ConditionalIdentity(constraint.fields, constraint.condition)
+
+
+class ConditionalIdentity(tuple):
+    """Identity fields that are only unique for rows matching a constraint condition."""
+
+    def __new__(cls, fields, condition):
+        identity = super().__new__(cls, fields)
+        identity.condition = condition
+        return identity
+
+
+class IdentityLookup(dict):
+    condition = None
+
+
+def _record_matches_condition(condition, scalar_values) -> bool:
+    against = {}
+    for name in condition_field_names(condition):
+        if name not in scalar_values:
+            return False
+        against[name] = Value(decode_scalar(scalar_values[name]))
+    try:
+        return condition.check(against)
+    except Exception:  # noqa: BLE001 - unsupported conditions are not used as identity
+        return False
 
 
 def _identity_lookup(model, record, resolver):
@@ -198,7 +229,11 @@ def _identity_lookup(model, record, resolver):
         generic_storage[generic_field.ct_field] = ("content_type", spec)
         generic_storage[generic_field.fk_field] = ("object_id", spec)
     for candidate in _identity_candidates(model):
-        lookup = {}
+        condition = getattr(candidate, "condition", None)
+        if condition is not None and not _record_matches_condition(condition, scalar_values):
+            continue
+        lookup = IdentityLookup()
+        lookup.condition = condition
         usable = True
         for name in candidate:
             if name in scalar_values:
@@ -256,19 +291,22 @@ def _find_existing(source_instance, model, record, resolver):
     lookup = _identity_lookup(model, record, resolver)
     if not lookup:
         return mapped
+    queryset = model._default_manager.all()
+    if getattr(lookup, "condition", None) is not None:
+        queryset = queryset.filter(lookup.condition)
     try:
-        natural = model._default_manager.get(**lookup)
+        natural = queryset.get(**lookup)
     except model.DoesNotExist:
         return mapped
     except model.MultipleObjectsReturned as exc:
         raise ImportConflictError(
-            f"Mehrere Zielobjekte passen auf {record['model']} mit {lookup}."
+            f"Mehrere Zielobjekte passen auf {record['model']} mit {dict(lookup)}."
         ) from exc
     if mapped is not None and mapped.pk != natural.pk:
         resolver.warn(
             ("mapping-rebound", record["id"]),
             f"Gespeicherte Zuordnung für {record['id']} wurde von Ziel-ID {mapped.pk} auf "
-            f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel {lookup} bereits existiert.",
+            f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel {dict(lookup)} bereits existiert.",
         )
     return natural
 
@@ -706,6 +744,27 @@ def _apply_m2m(obj, record, resolver):
         manager.set(values)
 
 
+def _skip_uninstalled_optional_models(records, resolver, report):
+    """Drop records of optional plugins which are not installed on the target."""
+    missing_labels = set()
+    for record_id, record in list(records.items()):
+        label = record["model"]
+        if not is_optional_plugin_model(label):
+            continue
+        try:
+            apps.get_model(label)
+        except (LookupError, ValueError):
+            missing_labels.add(label)
+            resolver.skipped.add(record_id)
+            report.add(label, "skipped")
+            del records[record_id]
+    for label in sorted(missing_labels):
+        report.warnings.append(
+            f"Objekte vom Typ {label} wurden übersprungen, da das zugehörige optionale Plugin "
+            "auf der Zielinstanz nicht installiert ist."
+        )
+
+
 def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bool) -> ImportReport:
     if conflict_strategy not in ("update", "skip", "fail"):
         raise ArchiveValidationError("Unbekannte Konfliktstrategie.")
@@ -731,6 +790,7 @@ def import_archive(parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bo
     report = ImportReport(dry_run=dry_run, warnings=list(parsed.warnings))
     resolved = {}
     resolver = ReferenceResolver(resolved, report.warnings, _model_for)
+    _skip_uninstalled_optional_models(records, resolver, report)
     compatibility = PluginCompatibility(report.warnings, dry_run=dry_run)
     deferred_relations = []
     deferred_generic = []

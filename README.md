@@ -151,6 +151,13 @@ NetBox verwendeten Limits von 25 Millionen Pixeln werden proportional auf
 höchstens 20 Millionen Pixel verkleinert und im Importbericht als Warnung
 ausgewiesen. Zum Schutz des Importprozesses bleibt eine harte Quellgrenze von
 100 Millionen Pixeln bestehen.
+Die optionale Datenträgerverwaltung von Netbox-Utilities wird vollständig
+übernommen, sofern das Plugin installiert ist: Datenträger, RAID-Gruppen und
+Steckplatz-Layouts der Geräte sowie die Datenträger-Vorlagen der benötigten
+Gerätetypen. Ausgebaute Datenträger werden nicht über den belegten Steckplatz
+mit aktiven Datenträgern verwechselt. Fehlt Netbox-Utilities auf der
+Zielinstanz, werden dessen Datensätze mit Warnung übersprungen, statt den
+Import abzubrechen.
 
 Auf Quelle und Ziel müssen jeweils dieselben Plugin-Versionen und Migrationen
 installiert sein. Verschlüsselte Zugangsdaten von NetBox-VM-Import sind nur bei

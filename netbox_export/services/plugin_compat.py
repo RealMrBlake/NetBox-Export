@@ -9,6 +9,13 @@ from django.db import models
 AUTO_IMPORT_TENANT_NAME = "Auto-Import"
 AUTO_IMPORT_TENANT_SLUG = "auto-import"
 MISSING_TENANT_MESSAGE = "Für dieses Objekt muss ein Mandant angegeben werden."
+# Apps of optional plugins whose data is exported when installed on the source
+# and skipped (instead of failing the import) when missing on the target.
+OPTIONAL_PLUGIN_APP_LABELS = frozenset({"netbox_utilities"})
+
+
+def is_optional_plugin_model(label: str) -> bool:
+    return label.split(".", 1)[0] in OPTIONAL_PLUGIN_APP_LABELS
 
 
 def netbox_utilities_tenant_required() -> bool:
@@ -34,12 +41,12 @@ def is_module_relation(field) -> bool:
     return getattr(getattr(related_model, "_meta", None), "label_lower", None) == "dcim.module"
 
 
-def _condition_field_names(condition):
+def condition_field_names(condition):
     for child in getattr(condition, "children", ()):
         if isinstance(child, tuple):
             yield child[0].split("__", 1)[0]
         else:
-            yield from _condition_field_names(child)
+            yield from condition_field_names(child)
 
 
 @cache
@@ -49,7 +56,7 @@ def check_constraint_field_names(model) -> frozenset[str]:
     names = set()
     for constraint in model._meta.constraints:
         if isinstance(constraint, models.CheckConstraint):
-            names.update(_condition_field_names(constraint.condition))
+            names.update(condition_field_names(constraint.condition))
     return frozenset(names)
 
 
