@@ -1,0 +1,428 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: netbox-export\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-26 21:17+0100\n"
+"PO-Revision-Date: 2026-10-26 21:20+0100\n"
+"Language-Team: German\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Export scope"
+msgstr "Exportbereich"
+
+msgid "Tenant group"
+msgstr "Mandantengruppe"
+
+msgid "Tenant"
+msgstr "Mandant"
+
+msgid "Region"
+msgstr "Region"
+
+msgid "Site"
+msgstr "Standort"
+
+msgid "Location"
+msgstr "Lokation"
+
+msgid "Select an object for the export scope."
+msgstr "Bitte ein Objekt für den Exportbereich auswählen."
+
+msgid "NetBox-Export archive"
+msgstr "NetBox-Export-Archiv"
+
+msgid "Existing objects"
+msgstr "Vorhandene Objekte"
+
+msgid "Update"
+msgstr "Aktualisieren"
+
+msgid "Skip"
+msgstr "Überspringen"
+
+msgid "Abort import"
+msgstr "Import abbrechen"
+
+msgid "Check only (no changes)"
+msgstr "Nur prüfen (keine Änderungen)"
+
+msgid "Runs the complete import and then rolls back the database transaction."
+msgstr ""
+"Führt den vollständigen Import aus und setzt die Datenbanktransaktion "
+"anschließend zurück."
+
+msgid "Force mode (skip errors)"
+msgstr "Force-Modus (Fehler überspringen)"
+
+msgid ""
+"Objects that fail to import are skipped individually instead of rolling back "
+"the whole import. Skipped objects are listed as warnings in the report."
+msgstr ""
+"Objekte, deren Import fehlschlägt, werden einzeln übersprungen, statt den "
+"gesamten Import zurückzurollen. Übersprungene Objekte werden im Bericht als "
+"Warnung aufgeführt."
+
+msgid "I confirm the writing import"
+msgstr "Ich bestätige den schreibenden Import"
+
+msgid "Confirmation is required for a writing import."
+msgstr "Für einen schreibenden Import ist die Bestätigung erforderlich."
+
+msgid "Export / Import"
+msgstr "Export / Import"
+
+#, python-format
+msgid "Duplicate file path in archive: %(path)s"
+msgstr "Doppelter Dateipfad im Archiv: %(path)s"
+
+#, python-format
+msgid "Unsafe file path in archive: %(path)s"
+msgstr "Unsicherer Dateipfad im Archiv: %(path)s"
+
+msgid "The archive exceeds the configured maximum size."
+msgstr "Das Archiv überschreitet die konfigurierte Maximalgröße."
+
+msgid "The uploaded file is not a valid ZIP archive."
+msgstr "Die hochgeladene Datei ist kein gültiges ZIP-Archiv."
+
+msgid "The archive contains too many files."
+msgstr "Das Archiv enthält zu viele Dateien."
+
+msgid "manifest.json or objects.ndjson is missing from the archive."
+msgstr "manifest.json oder objects.ndjson fehlt im Archiv."
+
+msgid "The extracted archive content is too large."
+msgstr "Der entpackte Archivinhalt ist zu groß."
+
+msgid "The archive has an impermissible compression ratio."
+msgstr "Das Archiv weist ein unzulässiges Kompressionsverhältnis auf."
+
+msgid "The archive metadata is invalid."
+msgstr "Die Metadaten im Archiv sind ungültig."
+
+msgid "The archive format or its version is not supported."
+msgstr "Das Archivformat oder dessen Version wird nicht unterstützt."
+
+msgid "The object file does not match its checksum."
+msgstr "Die Objektdatei stimmt nicht mit ihrer Prüfsumme überein."
+
+msgid "The archive signature is invalid or missing."
+msgstr "Die Archivsignatur ist ungültig oder fehlt."
+
+msgid ""
+"The archive is signed but was not verified because no key is configured."
+msgstr ""
+"Das Archiv ist signiert, aber ohne konfigurierten Schlüssel nicht "
+"verifiziert."
+
+msgid "The archive is not signed."
+msgstr "Das Archiv ist nicht signiert."
+
+msgid "The archive contains too many objects."
+msgstr "Das Archiv enthält zu viele Objekte."
+
+msgid "objects.ndjson contains invalid JSON."
+msgstr "objects.ndjson enthält ungültiges JSON."
+
+msgid "The file list does not match the manifest."
+msgstr "Die Dateiliste stimmt nicht mit dem Manifest überein."
+
+#, python-format
+msgid "The checksum of file %(name)s is invalid."
+msgstr "Die Prüfsumme der Datei %(name)s ist ungültig."
+
+msgid "The object count does not match the manifest."
+msgstr "Die Objektanzahl stimmt nicht mit dem Manifest überein."
+
+#, python-format
+msgid ""
+"The export would contain more than %(max)s objects. Narrow the scope or "
+"increase max_objects."
+msgstr ""
+"Der Export würde mehr als %(max)s Objekte enthalten. Bitte den Bereich "
+"verkleinern oder max_objects erhöhen."
+
+#, python-format
+msgid "The model %(model)s is not installed on the target instance."
+msgstr "Das Modell %(model)s ist auf der Zielinstanz nicht installiert."
+
+#, python-format
+msgid ""
+"Stored mapping for %(record)s was corrected from target ID %(old)s to target "
+"ID %(new)s because the natural key %(key)s already exists."
+msgstr ""
+"Gespeicherte Zuordnung für %(record)s wurde von Ziel-ID %(old)s auf Ziel-ID "
+"%(new)s korrigiert, da der Fachschlüssel %(key)s bereits existiert."
+
+#, python-format
+msgid "Rack reference for %(record)s could not be resolved."
+msgstr "Rack-Referenz für %(record)s konnte nicht aufgelöst werden."
+
+#, python-format
+msgid "Rack position for %(record)s was omitted because no rack is assigned."
+msgstr ""
+"Rackplatz für %(record)s wurde ausgelassen, da kein Rack zugeordnet ist."
+
+#, python-format
+msgid ""
+"Rack position conflict for %(record)s: %(target)s is occupied by target "
+"device(s) %(occupants)s."
+msgstr ""
+"Rackplatzkonflikt für %(record)s: %(target)s ist durch Zielgerät(e) "
+"%(occupants)s belegt."
+
+#, python-format
+msgid ""
+"Rack position for %(record)s was skipped: %(target)s remains occupied by "
+"target device(s) %(occupants)s. The imported device was saved without a rack "
+"position."
+msgstr ""
+"Rackplatz für %(record)s wurde übersprungen: %(target)s bleibt durch "
+"Zielgerät(e) %(occupants)s belegt. Das importierte Gerät wurde ohne Position"
+" im Rack gespeichert."
+
+#, python-format
+msgid ""
+"Rack position conflict for %(record)s resolved: target device(s) "
+"%(occupants)s were removed from %(target)s and left without a rack position."
+msgstr ""
+"Rackplatzkonflikt für %(record)s gelöst: Zielgerät(e) %(occupants)s wurden "
+"aus %(target)s gelöst und ohne Position im Rack belassen."
+
+#, python-format
+msgid ""
+"Port mapping(s) %(ids)s were replaced by %(record)s so the front/rear port "
+"cabling matches the source."
+msgstr ""
+"Portzuordnung(en) %(ids)s wurden durch %(record)s ersetzt, damit die "
+"Front-/Rear-Port-Verkabelung der Quelle entspricht."
+
+#, python-format
+msgid "The image exceeds the safe import limit of %(max)s pixels."
+msgstr "Das Bild überschreitet die sichere Importgrenze von %(max)s Pixeln."
+
+#, python-format
+msgid ""
+"The image with %(pixels)s pixels exceeds the safe import limit of %(max)s "
+"pixels."
+msgstr ""
+"Das Bild mit %(pixels)s Pixeln überschreitet die sichere Importgrenze von "
+"%(max)s Pixeln."
+
+#, python-format
+msgid "Image for %(record)s was downscaled from %(old)s to %(new)s pixels."
+msgstr "Bild für %(record)s wurde von %(old)s auf %(new)s Pixel verkleinert."
+
+#, python-format
+msgid "M2M reference for %(record)s could not be resolved."
+msgstr "M2M-Referenz für %(record)s konnte nicht aufgelöst werden."
+
+#, python-format
+msgid "Force mode: %(label)s was skipped because of an error: %(error)s"
+msgstr ""
+"Force-Modus: %(label)s wurde wegen eines Fehlers übersprungen: %(error)s"
+
+#, python-format
+msgid ""
+"Objects of type %(model)s were skipped because the related optional plugin "
+"is not installed on the target instance."
+msgstr ""
+"Objekte vom Typ %(model)s wurden übersprungen, da das zugehörige optionale "
+"Plugin auf der Zielinstanz nicht installiert ist."
+
+msgid "Unknown conflict strategy."
+msgstr "Unbekannte Konfliktstrategie."
+
+#, python-format
+msgid ""
+"NetBox versions are not compatible: source %(source)s, target %(target)s."
+msgstr ""
+"NetBox-Versionen sind nicht kompatibel: Quelle %(source)s, Ziel %(target)s."
+
+msgid "The source instance ID is missing or invalid."
+msgstr "Die Quellinstanz-Kennung fehlt oder ist ungültig."
+
+msgid "An object record is incomplete."
+msgstr "Ein Objektdatensatz ist unvollständig."
+
+#, python-format
+msgid "Duplicate object ID in archive: %(record)s"
+msgstr "Doppelte Objekt-ID im Archiv: %(record)s"
+
+#, python-format
+msgid "Target object already exists: %(record)s"
+msgstr "Zielobjekt existiert bereits: %(record)s"
+
+#, python-format
+msgid ""
+"Force mode: %(count)s object(s) with unresolvable references were skipped: "
+"%(blocked)s"
+msgstr ""
+"Force-Modus: %(count)s Objekt(e) mit nicht auflösbaren Referenzen wurden "
+"übersprungen: %(blocked)s"
+
+#, python-format
+msgid "Required references could not be resolved: %(blocked)s"
+msgstr "Erforderliche Referenzen konnten nicht aufgelöst werden: %(blocked)s"
+
+#, python-format
+msgid "Reference %(name)s for %(record)s could not be resolved."
+msgstr "Referenz %(name)s für %(record)s konnte nicht aufgelöst werden."
+
+#, python-format
+msgid "Reference %(name)s for %(record)s"
+msgstr "Referenz %(name)s für %(record)s"
+
+#, python-format
+msgid "Generic reference %(name)s for %(record)s is missing."
+msgstr "Generische Referenz %(name)s für %(record)s fehlt."
+
+#, python-format
+msgid "Generic reference %(name)s for %(record)s"
+msgstr "Generische Referenz %(name)s für %(record)s"
+
+#, python-format
+msgid "Custom field reference %(name)s for %(record)s is missing."
+msgstr "Custom-Field-Referenz %(name)s für %(record)s fehlt."
+
+#, python-format
+msgid "Custom field value %(name)s for %(record)s"
+msgstr "Custom-Field-Wert %(name)s für %(record)s"
+
+msgid "Rack placement of devices"
+msgstr "Rackplatzierung der Geräte"
+
+#, python-format
+msgid "Many-to-many assignments for %(record)s"
+msgstr "Mehrfachzuordnungen für %(record)s"
+
+msgid "Recalculation of cable paths"
+msgstr "Neuberechnung der Kabelpfade"
+
+#, python-format
+msgid "The import was rolled back: %(error)s"
+msgstr "Der Import wurde zurückgerollt: %(error)s"
+
+msgid ""
+"The tenant \"Auto-Import\" was used automatically as a fallback tenant for "
+"the dry run; it is not created or changed permanently."
+msgstr ""
+"Für den Prüflauf wurde der Mandant \"Auto-Import\" automatisch als "
+"Ersatzmandant verwendet; er wird nicht dauerhaft angelegt oder geändert."
+
+msgid ""
+"The tenant \"Auto-Import\" was created automatically and assigned to objects "
+"without a resolvable tenant."
+msgstr ""
+"Der Mandant \"Auto-Import\" wurde automatisch erstellt und Objekten ohne "
+"auflösbaren Mandanten zugewiesen."
+
+msgid ""
+"The existing tenant \"Auto-Import\" was selected automatically for objects "
+"without a resolvable tenant."
+msgstr ""
+"Der vorhandene Mandant \"Auto-Import\" wurde automatisch für Objekte ohne "
+"auflösbaren Mandanten ausgewählt."
+
+#, python-format
+msgid ""
+"Unique reference %(field)s was released from target object(s) %(ids)s and "
+"reassigned to the imported object."
+msgstr ""
+"Eindeutige Referenz %(field)s wurde von Zielobjekt(en) %(ids)s gelöst und "
+"dem importierten Objekt neu zugeordnet."
+
+#, python-format
+msgid ""
+"%(record)s (%(model)s) was skipped because of a missing required reference: "
+"%(fields)s."
+msgstr ""
+"%(record)s (%(model)s) wurde wegen fehlender Pflichtreferenz übersprungen: "
+"%(fields)s."
+
+msgid "not found"
+msgstr "nicht gefunden"
+
+msgid "not unique"
+msgstr "nicht eindeutig"
+
+#, python-format
+msgid "External reference omitted: %(model)s with %(lookup)s (%(reason)s)."
+msgstr "Externe Referenz ausgelassen: %(model)s mit %(lookup)s (%(reason)s)."
+
+#, python-format
+msgid "References to the skipped object %(record)s were omitted."
+msgstr "Referenzen auf das übersprungene Objekt %(record)s wurden ausgelassen."
+
+msgid "An object reference in the archive is invalid."
+msgstr "Eine Objektreferenz im Archiv ist ungültig."
+
+msgid "Dry run successful"
+msgstr "Prüflauf erfolgreich"
+
+msgid "Import completed"
+msgstr "Import abgeschlossen"
+
+#, python-format
+msgid "%(created)s created, %(updated)s updated, %(skipped)s skipped."
+msgstr ""
+"%(created)s erstellt, %(updated)s aktualisiert, %(skipped)s übersprungen."
+
+#, python-format
+msgid "Source: %(label)s (%(count)s objects)."
+msgstr "Quelle: %(label)s (%(count)s Objekte)."
+
+msgid "Model"
+msgstr "Modell"
+
+msgid "Created"
+msgstr "Erstellt"
+
+msgid "Updated"
+msgstr "Aktualisiert"
+
+msgid "Skipped"
+msgstr "Übersprungen"
+
+msgid "Export"
+msgstr "Export"
+
+msgid "Preparing export ..."
+msgstr "Export wird vorbereitet ..."
+
+msgid "Export progress"
+msgstr "Exportfortschritt"
+
+msgid "Export ZIP"
+msgstr "ZIP exportieren"
+
+msgid "Import"
+msgstr "Import"
+
+msgid "Uploading archive ..."
+msgstr "Archiv wird hochgeladen ..."
+
+msgid "Import progress"
+msgstr "Importfortschritt"
+
+msgid "Process archive"
+msgstr "Archiv verarbeiten"
+
+msgid "Transferring ZIP ..."
+msgstr "ZIP wird übertragen ..."
+
+msgid "Export completed"
+msgstr "Export abgeschlossen"
+
+msgid "Export failed"
+msgstr "Export fehlgeschlagen"
+
+msgid "Checking and processing archive ..."
+msgstr "Archiv wird geprüft und verarbeitet ..."
+
+msgid "Import failed"
+msgstr "Import fehlgeschlagen"

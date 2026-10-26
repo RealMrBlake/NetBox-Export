@@ -49,7 +49,7 @@ def test_missing_external_reference_is_omitted_and_warned_once():
     assert second_available is True
     assert manager.calls == 1
     assert warnings == [
-        "Externe Referenz ausgelassen: users.user mit {'username': 'lke'} (nicht gefunden)."
+        "External reference omitted: users.user with {'username': 'lke'} (not found)."
     ]
 
 
@@ -66,7 +66,7 @@ def test_ambiguous_external_reference_is_omitted():
     assert value is MISSING_REFERENCE
     assert available is True
     assert warnings == [
-        "Externe Referenz ausgelassen: users.group mit {'name': 'NetBox'} (nicht eindeutig)."
+        "External reference omitted: users.group with {'name': 'NetBox'} (not unique)."
     ]
 
 
@@ -84,8 +84,8 @@ def test_reference_to_skipped_record_is_omitted_and_warned_once():
     assert second_available is True
     assert warnings == [
         (
-            "dcim.rackreservation:17 (dcim.rackreservation) wurde wegen fehlender "
-            "Pflichtreferenz übersprungen: user."
+            "dcim.rackreservation:17 (dcim.rackreservation) was skipped because of a missing "
+            "required reference: user."
         ),
-        "Referenzen auf das übersprungene Objekt dcim.rackreservation:17 wurden ausgelassen.",
+        "References to the skipped object dcim.rackreservation:17 were omitted.",
     ]

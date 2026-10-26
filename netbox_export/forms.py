@@ -1,26 +1,27 @@
 from dcim.models import Location, Region, Site
 from django import forms
+from django.utils.translation import gettext_lazy as _
 from tenancy.models import Tenant, TenantGroup
 
 
 class ExportForm(forms.Form):
     scope_type = forms.ChoiceField(
-        label="Exportbereich",
+        label=_("Export scope"),
         choices=(
-            ("tenant_group", "Mandantengruppe"),
-            ("tenant", "Mandant"),
-            ("region", "Region"),
-            ("site", "Standort"),
-            ("location", "Lokation"),
+            ("tenant_group", _("Tenant group")),
+            ("tenant", _("Tenant")),
+            ("region", _("Region")),
+            ("site", _("Site")),
+            ("location", _("Location")),
         ),
     )
     tenant_group = forms.ModelChoiceField(
-        label="Mandantengruppe", queryset=TenantGroup.objects.all(), required=False
+        label=_("Tenant group"), queryset=TenantGroup.objects.all(), required=False
     )
-    tenant = forms.ModelChoiceField(label="Mandant", queryset=Tenant.objects.all(), required=False)
-    region = forms.ModelChoiceField(label="Region", queryset=Region.objects.all(), required=False)
-    site = forms.ModelChoiceField(label="Standort", queryset=Site.objects.all(), required=False)
-    location = forms.ModelChoiceField(label="Lokation", queryset=Location.objects.all(), required=False)
+    tenant = forms.ModelChoiceField(label=_("Tenant"), queryset=Tenant.objects.all(), required=False)
+    region = forms.ModelChoiceField(label=_("Region"), queryset=Region.objects.all(), required=False)
+    site = forms.ModelChoiceField(label=_("Site"), queryset=Site.objects.all(), required=False)
+    location = forms.ModelChoiceField(label=_("Location"), queryset=Location.objects.all(), required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -32,47 +33,47 @@ class ExportForm(forms.Form):
         scope_type = cleaned.get("scope_type")
         selected = cleaned.get(scope_type) if scope_type else None
         if scope_type and selected is None:
-            self.add_error(scope_type, "Bitte ein Objekt für den Exportbereich auswählen.")
+            self.add_error(scope_type, _("Select an object for the export scope."))
         cleaned["scope_object"] = selected
         return cleaned
 
 
 class ImportForm(forms.Form):
     archive = forms.FileField(
-        label="NetBox-Export-Archiv",
+        label=_("NetBox-Export archive"),
         widget=forms.ClearableFileInput(attrs={"accept": ".zip,application/zip"}),
     )
     conflict_strategy = forms.ChoiceField(
-        label="Vorhandene Objekte",
+        label=_("Existing objects"),
         choices=(
-            ("update", "Aktualisieren"),
-            ("skip", "Überspringen"),
-            ("fail", "Import abbrechen"),
+            ("update", _("Update")),
+            ("skip", _("Skip")),
+            ("fail", _("Abort import")),
         ),
         initial="update",
     )
     dry_run = forms.BooleanField(
-        label="Nur prüfen (keine Änderungen)",
+        label=_("Check only (no changes)"),
         required=False,
         initial=True,
-        help_text="Führt den vollständigen Import aus und setzt die Datenbanktransaktion anschließend zurück.",
+        help_text=_("Runs the complete import and then rolls back the database transaction."),
     )
     force = forms.BooleanField(
-        label="Force-Modus (Fehler überspringen)",
+        label=_("Force mode (skip errors)"),
         required=False,
         initial=False,
-        help_text=(
-            "Objekte, deren Import fehlschlägt, werden einzeln übersprungen, statt den gesamten Import "
-            "zurückzurollen. Übersprungene Objekte werden im Bericht als Warnung aufgeführt."
+        help_text=_(
+            "Objects that fail to import are skipped individually instead of rolling back the whole import. "
+            "Skipped objects are listed as warnings in the report."
         ),
     )
     confirm_apply = forms.BooleanField(
-        label="Ich bestätige den schreibenden Import",
+        label=_("I confirm the writing import"),
         required=False,
     )
 
     def clean(self):
         cleaned = super().clean()
         if not cleaned.get("dry_run") and not cleaned.get("confirm_apply"):
-            self.add_error("confirm_apply", "Für einen schreibenden Import ist die Bestätigung erforderlich.")
+            self.add_error("confirm_apply", _("Confirmation is required for a writing import."))
         return cleaned

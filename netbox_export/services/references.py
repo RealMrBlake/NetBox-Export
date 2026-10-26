@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from django.utils.translation import gettext as _
+
 from .codec import decode_scalar
 from .exceptions import ArchiveValidationError
 
@@ -25,7 +27,8 @@ class ReferenceResolver:
         fields = ", ".join(field_names)
         self.warn(
             ("skipped", record_id),
-            f"{record_id} ({model_label}) wurde wegen fehlender Pflichtreferenz übersprungen: {fields}.",
+            _("%(record)s (%(model)s) was skipped because of a missing required reference: %(fields)s.")
+            % {"record": record_id, "model": model_label, "fields": fields},
         )
 
     def _external_object(self, spec):
@@ -39,14 +42,15 @@ class ReferenceResolver:
             value = model._default_manager.get(**lookup)
         except model.DoesNotExist:
             value = MISSING_REFERENCE
-            reason = "nicht gefunden"
+            reason = _("not found")
         except model.MultipleObjectsReturned:
             value = MISSING_REFERENCE
-            reason = "nicht eindeutig"
+            reason = _("not unique")
         if value is MISSING_REFERENCE:
             self.warn(
                 ("external", cache_key),
-                f"Externe Referenz ausgelassen: {spec['model']} mit {lookup} ({reason}).",
+                _("External reference omitted: %(model)s with %(lookup)s (%(reason)s).")
+                % {"model": spec["model"], "lookup": lookup, "reason": reason},
             )
         self._external_cache[cache_key] = value
         return value
@@ -59,10 +63,10 @@ class ReferenceResolver:
             if record_id in self.skipped:
                 self.warn(
                     ("internal", record_id),
-                    f"Referenzen auf das übersprungene Objekt {record_id} wurden ausgelassen.",
+                    _("References to the skipped object %(record)s were omitted.") % {"record": record_id},
                 )
                 return MISSING_REFERENCE, True
             return self.resolved.get(record_id), record_id in self.resolved
         if "external" in spec:
             return self._external_object(spec["external"]), True
-        raise ArchiveValidationError("Eine Objektreferenz im Archiv ist ungültig.")
+        raise ArchiveValidationError(_("An object reference in the archive is invalid."))

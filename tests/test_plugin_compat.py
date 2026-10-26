@@ -171,8 +171,8 @@ def test_creates_and_assigns_auto_import_tenant_when_policy_is_active():
     assert len(manager.created) == 1
     assert warnings == [
         (
-            'Der Mandant "Auto-Import" wurde automatisch erstellt und Objekten ohne '
-            'auflösbaren Mandanten zugewiesen.'
+            'The tenant "Auto-Import" was created automatically and assigned to objects without a '
+            'resolvable tenant.'
         )
     ]
 
@@ -197,7 +197,7 @@ def test_validation_error_forces_fallback_for_older_plugin_versions():
     assert manager.created == []
     assert warnings == [
         (
-            'Der vorhandene Mandant "Auto-Import" wurde automatisch für Objekte ohne '
-            'auflösbaren Mandanten ausgewählt.'
+            'The existing tenant "Auto-Import" was selected automatically for objects without a '
+            'resolvable tenant.'
         )
     ]

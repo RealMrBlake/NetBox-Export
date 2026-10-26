@@ -5,10 +5,12 @@ from functools import cache
 from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models
+from django.utils.translation import gettext as _
 
 AUTO_IMPORT_TENANT_NAME = "Auto-Import"
 AUTO_IMPORT_TENANT_SLUG = "auto-import"
-MISSING_TENANT_MESSAGE = "Für dieses Objekt muss ein Mandant angegeben werden."
+MISSING_TENANT_MESSAGE = "Für dieses Objekt muss ein Mandant angegeben werden."  # netbox_utilities before i18n
+MISSING_TENANT_CODE = "tenant_required"
 # Apps of optional plugins whose data is exported when installed on the source
 # and skipped (instead of failing the import) when missing on the target.
 OPTIONAL_PLUGIN_APP_LABELS = frozenset({"netbox_utilities"})
@@ -20,11 +22,26 @@ def is_optional_plugin_model(label: str) -> bool:
 
 def netbox_utilities_tenant_required() -> bool:
     """Return the effective tenant policy without requiring the optional plugin."""
+    if not apps.is_installed("netbox_utilities"):  # importing its models while disabled raises RuntimeError
+        return False
     try:
         from netbox_utilities.runtime import tenant_required
     except ImportError:
         return False
     return bool(tenant_required())
+
+
+def netbox_utilities_tenant_messages() -> set[str]:
+    """Messages netbox_utilities may raise for a missing tenant, in the active language."""
+    messages = {MISSING_TENANT_MESSAGE}
+    if not apps.is_installed("netbox_utilities"):
+        return messages
+    try:
+        from netbox_utilities.tenant_validation import VALIDATION_MESSAGE
+    except ImportError:
+        return messages
+    messages.add(str(VALIDATION_MESSAGE))
+    return messages
 
 
 def is_tenant_relation(field) -> bool:
@@ -99,7 +116,9 @@ class PluginCompatibility:
 
     @staticmethod
     def _is_missing_tenant_error(exc: ValidationError) -> bool:
-        return MISSING_TENANT_MESSAGE in exc.messages
+        if any(getattr(error, "code", None) == MISSING_TENANT_CODE for error in getattr(exc, "error_list", ())):
+            return True
+        return not netbox_utilities_tenant_messages().isdisjoint(exc.messages)
 
     def _auto_import_tenant(self):
         if self._fallback_tenant is not None:
@@ -118,18 +137,24 @@ class PluginCompatibility:
 
         if self.dry_run:
             message = (
-                'Für den Prüflauf wurde der Mandant "Auto-Import" automatisch als Ersatzmandant '
-                "verwendet; er wird nicht dauerhaft angelegt oder geändert."
+                _(
+                    'The tenant "Auto-Import" was used automatically as a fallback tenant for the dry run; '
+                    "it is not created or changed permanently."
+                )
             )
         elif created:
             message = (
-                'Der Mandant "Auto-Import" wurde automatisch erstellt und Objekten ohne '
-                "auflösbaren Mandanten zugewiesen."
+                _(
+                    'The tenant "Auto-Import" was created automatically and assigned to objects without a '
+                    "resolvable tenant."
+                )
             )
         else:
             message = (
-                'Der vorhandene Mandant "Auto-Import" wurde automatisch für Objekte ohne '
-                "auflösbaren Mandanten ausgewählt."
+                _(
+                    'The existing tenant "Auto-Import" was selected automatically for objects without a '
+                    "resolvable tenant."
+                )
             )
         self.warnings.append(message)
         self._fallback_tenant = tenant
@@ -174,6 +199,9 @@ class PluginCompatibility:
         type(obj)._default_manager.filter(pk__in=conflict_ids).update(**{field.attname: None})
         identifiers = ", ".join(str(pk) for pk in conflict_ids)
         self.warnings.append(
-            f"Eindeutige Referenz {obj._meta.label_lower}.{field_name} wurde von Zielobjekt(en) "
-            f"{identifiers} gelöst und dem importierten Objekt neu zugeordnet."
+            _(
+                "Unique reference %(field)s was released from target object(s) %(ids)s and reassigned to the "
+                "imported object."
+            )
+            % {"field": f"{obj._meta.label_lower}.{field_name}", "ids": identifiers}
         )

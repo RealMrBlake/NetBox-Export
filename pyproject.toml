@@ -20,7 +20,11 @@ classifiers = [
 include = ["netbox_export*"]
 
 [tool.setuptools.package-data]
-netbox_export = ["templates/**/*.html"]
+netbox_export = [
+  "templates/**/*.html",
+  "locale/*/LC_MESSAGES/*.po",
+  "locale/*/LC_MESSAGES/*.mo",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -18,6 +18,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, models, transaction
 from django.db.models import Value
+from django.utils.translation import gettext as _
 from PIL import Image as PillowImage
 
 from netbox_export.models import ImportedObjectMapping
@@ -105,9 +106,9 @@ def _model_for(label: str):
     try:
         model = apps.get_model(label)
     except (LookupError, ValueError) as exc:
-        raise ArchiveValidationError(f"Das Modell {label} ist auf der Zielinstanz nicht installiert.") from exc
+        raise ArchiveValidationError(_("The model %(model)s is not installed on the target instance.") % {"model": label}) from exc
     if model is None:
-        raise ArchiveValidationError(f"Das Modell {label} ist auf der Zielinstanz nicht installiert.")
+        raise ArchiveValidationError(_("The model %(model)s is not installed on the target instance.") % {"model": label})
     return model
 
 
@@ -313,8 +314,11 @@ def _find_existing(source_instance, model, record, resolver):
     if mapped is not None and mapped.pk != natural.pk:
         resolver.warn(
             ("mapping-rebound", record["id"]),
-            f"Gespeicherte Zuordnung für {record['id']} wurde von Ziel-ID {mapped.pk} auf "
-            f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel {dict(lookup)} bereits existiert.",
+            _(
+                "Stored mapping for %(record)s was corrected from target ID %(old)s to target ID %(new)s "
+                "because the natural key %(key)s already exists."
+            )
+            % {"record": record["id"], "old": mapped.pk, "new": natural.pk, "key": dict(lookup)},
         )
     return natural
 
@@ -418,7 +422,7 @@ def _apply_device_placements(
     for record_id, placement in placements:
         rack, available = resolver.resolve(placement.rack_spec)
         if not available:
-            raise ArchiveValidationError(f"Rack-Referenz für {record_id} konnte nicht aufgelöst werden.")
+            raise ArchiveValidationError(_("Rack reference for %(record)s could not be resolved.") % {"record": record_id})
         if rack is MISSING_REFERENCE:
             continue
 
@@ -428,7 +432,7 @@ def _apply_device_placements(
         if rack is None and (position is not None or face is not None):
             resolver.warn(
                 ("device-placement-without-rack", record_id),
-                f"Rackplatz für {record_id} wurde ausgelassen, da kein Rack zugeordnet ist.",
+                _("Rack position for %(record)s was omitted because no rack is assigned.") % {"record": record_id},
             )
             position = None
             face = None
@@ -445,14 +449,18 @@ def _apply_device_placements(
         occupants = _conflicting_devices(conflicts)
         if conflict_strategy == "fail":
             raise ImportConflictError(
-                f"Rackplatzkonflikt für {record_id}: {target} ist durch Zielgerät(e) {occupants} belegt."
+                _("Rack position conflict for %(record)s: %(target)s is occupied by target device(s) %(occupants)s.")
+                % {"record": record_id, "target": target, "occupants": occupants}
             )
         if conflict_strategy == "skip":
             _save_device_placement(device, rack, None, None, compatibility)
             resolver.warn(
                 ("device-placement-skipped", record_id),
-                f"Rackplatz für {record_id} wurde übersprungen: {target} bleibt durch "
-                f"Zielgerät(e) {occupants} belegt. Das importierte Gerät wurde ohne Position im Rack gespeichert.",
+                _(
+                    "Rack position for %(record)s was skipped: %(target)s remains occupied by target device(s) "
+                    "%(occupants)s. The imported device was saved without a rack position."
+                )
+                % {"record": record_id, "target": target, "occupants": occupants},
             )
             continue
 
@@ -463,8 +471,11 @@ def _apply_device_placements(
         _save_device_placement(device, rack, position, face, compatibility)
         resolver.warn(
             ("device-placement-released", record_id),
-            f"Rackplatzkonflikt für {record_id} gelöst: Zielgerät(e) {occupants} wurden aus {target} "
-            "gelöst und ohne Position im Rack belassen.",
+            _(
+                "Rack position conflict for %(record)s resolved: target device(s) %(occupants)s were removed "
+                "from %(target)s and left without a rack position."
+            )
+            % {"record": record_id, "occupants": occupants, "target": target},
         )
 
 
@@ -503,8 +514,10 @@ def _release_port_mapping_conflicts(obj, resolver, record_id):
         conflict.delete()
     resolver.warn(
         ("port-mapping-replaced", record_id),
-        f"Portzuordnung(en) {conflict_ids} wurden durch {record_id} ersetzt, damit die "
-        "Front-/Rear-Port-Verkabelung der Quelle entspricht.",
+        _(
+            "Port mapping(s) %(ids)s were replaced by %(record)s so the front/rear port cabling matches the source."
+        )
+        % {"ids": conflict_ids, "record": record_id},
     )
 
 
@@ -640,8 +653,8 @@ def _open_image_with_bounded_override(data):
         except PillowImage.DecompressionBombError as exc:
             stream.close()
             raise ArchiveValidationError(
-                "Das Bild überschreitet die sichere Importgrenze von "
-                f"{IMPORTED_IMAGE_SOURCE_MAX_PIXELS:,} Pixeln."
+                _("The image exceeds the safe import limit of %(max)s pixels.")
+                % {"max": f"{IMPORTED_IMAGE_SOURCE_MAX_PIXELS:,}"}
             ) from exc
         except Exception:
             stream.close()
@@ -673,8 +686,8 @@ def _prepare_image_asset(data):
         source_pixels = width * height
         if source_pixels > IMPORTED_IMAGE_SOURCE_MAX_PIXELS:
             raise ArchiveValidationError(
-                f"Das Bild mit {source_pixels:,} Pixeln überschreitet die sichere Importgrenze von "
-                f"{IMPORTED_IMAGE_SOURCE_MAX_PIXELS:,} Pixeln."
+                _("The image with %(pixels)s pixels exceeds the safe import limit of %(max)s pixels.")
+                % {"pixels": f"{source_pixels:,}", "max": f"{IMPORTED_IMAGE_SOURCE_MAX_PIXELS:,}"}
             )
         if source_pixels <= NETBOX_IMAGE_MAX_PIXELS:
             return data, width, height, None
@@ -714,8 +727,8 @@ def _set_files(obj, record, assets, saved_files, *, dry_run: bool, import_warnin
                 old_width, old_height, new_width, new_height = resize_info
                 record_id = record.get("id", obj._meta.label_lower)
                 import_warnings.append(
-                    f"Bild für {record_id} wurde von {old_width}×{old_height} auf "
-                    f"{new_width}×{new_height} Pixel verkleinert."
+                    _("Image for %(record)s was downscaled from %(old)s to %(new)s pixels.")
+                    % {"record": record_id, "old": f"{old_width}×{old_height}", "new": f"{new_width}×{new_height}"}
                 )
         if dry_run:
             continue
@@ -748,7 +761,7 @@ def _apply_m2m(obj, record, resolver):
         for spec in specs:
             value, available = resolver.resolve(spec)
             if not available:
-                raise ArchiveValidationError(f"M2M-Referenz für {record['id']} konnte nicht aufgelöst werden.")
+                raise ArchiveValidationError(_("M2M reference for %(record)s could not be resolved.") % {"record": record["id"]})
             if value is MISSING_REFERENCE:
                 continue
             values.append(value)
@@ -781,7 +794,7 @@ def _forced(force, warnings, label, func, *args, **kwargs):
     except ImportConflictError:
         raise
     except Exception as exc:  # noqa: BLE001 - force mode skips any failing step
-        warnings.append(f"Force-Modus: {label} wurde wegen eines Fehlers übersprungen: {exc}")
+        warnings.append(_("Force mode: %(label)s was skipped because of an error: %(error)s") % {"label": label, "error": exc})
         return None
 
 
@@ -801,8 +814,11 @@ def _skip_uninstalled_optional_models(records, resolver, report):
             del records[record_id]
     for label in sorted(missing_labels):
         report.warnings.append(
-            f"Objekte vom Typ {label} wurden übersprungen, da das zugehörige optionale Plugin "
-            "auf der Zielinstanz nicht installiert ist."
+            _(
+                "Objects of type %(model)s were skipped because the related optional plugin is not installed "
+                "on the target instance."
+            )
+            % {"model": label}
         )
 
 
@@ -810,24 +826,25 @@ def import_archive(
     parsed: ParsedArchive, *, conflict_strategy: str, dry_run: bool, force: bool = False
 ) -> ImportReport:
     if conflict_strategy not in ("update", "skip", "fail"):
-        raise ArchiveValidationError("Unbekannte Konfliktstrategie.")
+        raise ArchiveValidationError(_("Unknown conflict strategy."))
     source_version = str(parsed.manifest.get("source_netbox_version", ""))
     target_version = str(getattr(getattr(settings, "RELEASE", None), "version", ""))
     if source_version and target_version and source_version.split(".")[:2] != target_version.split(".")[:2]:
         raise ArchiveValidationError(
-            f"NetBox-Versionen sind nicht kompatibel: Quelle {source_version}, Ziel {target_version}."
+            _("NetBox versions are not compatible: source %(source)s, target %(target)s.")
+            % {"source": source_version, "target": target_version}
         )
     try:
         source_instance = uuid.UUID(parsed.manifest["source_instance"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise ArchiveValidationError("Die Quellinstanz-Kennung fehlt oder ist ungültig.") from exc
+        raise ArchiveValidationError(_("The source instance ID is missing or invalid.")) from exc
 
     records = {}
     for record in parsed.records:
         if not all(key in record for key in ("id", "model", "source_pk")):
-            raise ArchiveValidationError("Ein Objektdatensatz ist unvollständig.")
+            raise ArchiveValidationError(_("An object record is incomplete."))
         if record["id"] in records:
-            raise ArchiveValidationError(f"Doppelte Objekt-ID im Archiv: {record['id']}")
+            raise ArchiveValidationError(_("Duplicate object ID in archive: %(record)s") % {"record": record["id"]})
         records[record["id"]] = record
 
     report = ImportReport(dry_run=dry_run, warnings=list(parsed.warnings))
@@ -867,7 +884,7 @@ def import_archive(
                     except IdentityNotReady:
                         continue
                     if existing is not None and conflict_strategy == "fail":
-                        raise ImportConflictError(f"Zielobjekt existiert bereits: {record_id}")
+                        raise ImportConflictError(_("Target object already exists: %(record)s") % {"record": record_id})
 
                     if existing is not None and conflict_strategy == "skip":
                         obj = existing
@@ -905,7 +922,7 @@ def import_archive(
                                 raise
                             resolver.skipped.add(record_id)
                             report.warnings.append(
-                                f"Force-Modus: {record_id} wurde wegen eines Fehlers übersprungen: {exc}"
+                                _("Force mode: %(label)s was skipped because of an error: %(error)s") % {"label": record_id, "error": exc}
                             )
                             report.add(record["model"], "skipped")
                             pending.pop(record_id)
@@ -934,12 +951,12 @@ def import_archive(
                             resolver.skipped.add(record_id)
                             report.add(record["model"], "skipped")
                         report.warnings.append(
-                            f"Force-Modus: {len(pending)} Objekt(e) mit nicht auflösbaren Referenzen "
-                            f"wurden übersprungen: {blocked}"
+                            _("Force mode: %(count)s object(s) with unresolvable references were skipped: %(blocked)s")
+                            % {"count": len(pending), "blocked": blocked}
                         )
                         break
                     raise ArchiveValidationError(
-                        f"Erforderliche Referenzen konnten nicht aufgelöst werden: {blocked}"
+                        _("Required references could not be resolved: %(blocked)s") % {"blocked": blocked}
                     )
 
             for record_id, name, spec in deferred_relations:
@@ -947,13 +964,13 @@ def import_archive(
                     continue
                 value, available = resolver.resolve(spec)
                 if not available:
-                    raise ArchiveValidationError(f"Referenz {name} für {record_id} konnte nicht aufgelöst werden.")
+                    raise ArchiveValidationError(_("Reference %(name)s for %(record)s could not be resolved.") % {"name": name, "record": record_id})
                 if value is MISSING_REFERENCE:
                     continue
                 _forced(
                     force,
                     report.warnings,
-                    f"Referenz {name} für {record_id}",
+                    _("Reference %(name)s for %(record)s") % {"name": name, "record": record_id},
                     _apply_deferred_relation,
                     resolved[record_id],
                     name,
@@ -966,7 +983,7 @@ def import_archive(
                     continue
                 value, available = resolver.resolve(spec)
                 if not available:
-                    raise ArchiveValidationError(f"Generische Referenz {name} für {record_id} fehlt.")
+                    raise ArchiveValidationError(_("Generic reference %(name)s for %(record)s is missing.") % {"name": name, "record": record_id})
                 if value is MISSING_REFERENCE:
                     continue
                 obj = resolved[record_id]
@@ -975,7 +992,7 @@ def import_archive(
                 _forced(
                     force,
                     report.warnings,
-                    f"Generische Referenz {name} für {record_id}",
+                    _("Generic reference %(name)s for %(record)s") % {"name": name, "record": record_id},
                     compatibility.save,
                     obj,
                     update_fields=[field.ct_field, field.fk_field],
@@ -986,13 +1003,13 @@ def import_archive(
                     continue
                 value, available = _decode_archived_value(encoded, resolver)
                 if not available:
-                    raise ArchiveValidationError(f"Custom-Field-Referenz {name} für {record_id} fehlt.")
+                    raise ArchiveValidationError(_("Custom field reference %(name)s for %(record)s is missing.") % {"name": name, "record": record_id})
                 obj = resolved[record_id]
                 setattr(obj, name, value)
                 _forced(
                     force,
                     report.warnings,
-                    f"Custom-Field-Wert {name} für {record_id}",
+                    _("Custom field value %(name)s for %(record)s") % {"name": name, "record": record_id},
                     compatibility.save,
                     obj,
                     update_fields=[name],
@@ -1001,7 +1018,7 @@ def import_archive(
             _forced(
                 force,
                 report.warnings,
-                "Rackplatzierung der Geräte",
+                _("Rack placement of devices"),
                 _apply_device_placements,
                 deferred_device_placements,
                 resolved,
@@ -1015,7 +1032,7 @@ def import_archive(
                     _forced(
                         force,
                         report.warnings,
-                        f"Mehrfachzuordnungen für {record_id}",
+                        _("Many-to-many assignments for %(record)s") % {"record": record_id},
                         _apply_m2m,
                         resolved[record_id],
                         record,
@@ -1025,7 +1042,7 @@ def import_archive(
             _forced(
                 force,
                 report.warnings,
-                "Neuberechnung der Kabelpfade",
+                _("Recalculation of cable paths"),
                 _rebuild_imported_cable_paths,
                 records,
                 resolved,
@@ -1035,11 +1052,11 @@ def import_archive(
                 transaction.set_rollback(True)
     except (IntegrityError, ValueError, TypeError) as exc:
         _cleanup_files(saved_files)
-        raise ArchiveValidationError(f"Der Import wurde zurückgerollt: {exc}") from exc
+        raise ArchiveValidationError(_("The import was rolled back: %(error)s") % {"error": exc}) from exc
     except ExportImportError:
         _cleanup_files(saved_files)
         raise
     except Exception as exc:
         _cleanup_files(saved_files)
-        raise ArchiveValidationError(f"Der Import wurde zurückgerollt: {exc}") from exc
+        raise ArchiveValidationError(_("The import was rolled back: %(error)s") % {"error": exc}) from exc
     return report

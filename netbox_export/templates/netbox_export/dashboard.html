@@ -1,5 +1,6 @@
 {% extends 'base/layout.html' %}
 {% load form_helpers %}
+{% load i18n %}
 
 {% block title %}NetBox-Export{% endblock title %}
 
@@ -19,18 +20,22 @@
   {% if report %}
     <div class="alert {% if report.dry_run %}alert-info{% else %}alert-success{% endif %}" role="alert">
       <h2 class="h4 mb-2">
-        {% if report.dry_run %}Prüflauf erfolgreich{% else %}Import abgeschlossen{% endif %}
+        {% if report.dry_run %}{% trans "Dry run successful" %}{% else %}{% trans "Import completed" %}{% endif %}
       </h2>
       <div>
-        {{ report.created }} erstellt, {{ report.updated }} aktualisiert, {{ report.skipped }} übersprungen.
-        Quelle: {{ manifest.scope.label }} ({{ manifest.object_count }} Objekte).
+        {% blocktrans trimmed with created=report.created updated=report.updated skipped=report.skipped %}
+          {{ created }} created, {{ updated }} updated, {{ skipped }} skipped.
+        {% endblocktrans %}
+        {% blocktrans trimmed with label=manifest.scope.label count=manifest.object_count %}
+          Source: {{ label }} ({{ count }} objects).
+        {% endblocktrans %}
       </div>
       {% for warning in report.warnings %}<div class="mt-1">{{ warning }}</div>{% endfor %}
     </div>
     <div class="table-responsive mb-4">
       <table class="table table-sm table-hover">
         <thead>
-          <tr><th>Modell</th><th class="text-end">Erstellt</th><th class="text-end">Aktualisiert</th><th class="text-end">Übersprungen</th></tr>
+          <tr><th>{% trans "Model" %}</th><th class="text-end">{% trans "Created" %}</th><th class="text-end">{% trans "Updated" %}</th><th class="text-end">{% trans "Skipped" %}</th></tr>
         </thead>
         <tbody>
           {% for model, counts in report.models.items %}
@@ -50,7 +55,7 @@
     <div class="col-12 col-xl-6">
       <div class="card h-100">
         <div class="card-header">
-          <h2 class="card-title"><i class="mdi mdi-download me-1" aria-hidden="true"></i> Export</h2>
+          <h2 class="card-title"><i class="mdi mdi-download me-1" aria-hidden="true"></i> {% trans "Export" %}</h2>
         </div>
         <form method="post" id="netbox-export-form" novalidate>
           {% csrf_token %}
@@ -64,15 +69,15 @@
           <div class="card-footer text-end">
             <div id="export-progress" class="mb-3 text-start" hidden aria-live="polite">
               <div class="d-flex justify-content-between mb-1">
-                <span class="progress-label">Export wird vorbereitet ...</span>
+                <span class="progress-label">{% trans "Preparing export ..." %}</span>
                 <span class="progress-percent"></span>
               </div>
-              <div class="progress" role="progressbar" aria-label="Exportfortschritt" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress" role="progressbar" aria-label="{% trans "Export progress" %}" aria-valuemin="0" aria-valuemax="100">
                 <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
               </div>
             </div>
             <button type="submit" class="btn btn-primary">
-              <i class="mdi mdi-archive-arrow-down me-1" aria-hidden="true"></i> ZIP exportieren
+              <i class="mdi mdi-archive-arrow-down me-1" aria-hidden="true"></i> {% trans "Export ZIP" %}
             </button>
           </div>
         </form>
@@ -82,7 +87,7 @@
     <div class="col-12 col-xl-6">
       <div class="card h-100">
         <div class="card-header">
-          <h2 class="card-title"><i class="mdi mdi-upload me-1" aria-hidden="true"></i> Import</h2>
+          <h2 class="card-title"><i class="mdi mdi-upload me-1" aria-hidden="true"></i> {% trans "Import" %}</h2>
         </div>
         <form method="post" id="netbox-import-form" enctype="multipart/form-data" novalidate>
           {% csrf_token %}
@@ -96,15 +101,15 @@
           <div class="card-footer text-end">
             <div id="import-progress" class="mb-3 text-start" hidden aria-live="polite">
               <div class="d-flex justify-content-between mb-1">
-                <span class="progress-label">Archiv wird hochgeladen ...</span>
+                <span class="progress-label">{% trans "Uploading archive ..." %}</span>
                 <span class="progress-percent"></span>
               </div>
-              <div class="progress" role="progressbar" aria-label="Importfortschritt" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress" role="progressbar" aria-label="{% trans "Import progress" %}" aria-valuemin="0" aria-valuemax="100">
                 <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
               </div>
             </div>
             <button type="submit" class="btn btn-primary">
-              <i class="mdi mdi-archive-arrow-up me-1" aria-hidden="true"></i> Archiv verarbeiten
+              <i class="mdi mdi-archive-arrow-up me-1" aria-hidden="true"></i> {% trans "Process archive" %}
             </button>
           </div>
         </form>
@@ -115,8 +120,10 @@
 
 {% block javascript %}
   {{ block.super }}
+  {{ js_messages|json_script:"netbox-export-messages" }}
   <script>
     (() => {
+      const msg = JSON.parse(document.getElementById('netbox-export-messages').textContent);
       const typeSelect = document.getElementById('id_export-scope_type');
       const names = ['tenant_group', 'tenant', 'region', 'site', 'location'];
       const refresh = () => {
@@ -178,7 +185,7 @@
         event.preventDefault();
         if (!exportForm.reportValidity()) return;
         setBusy(exportForm, true);
-        updateProgress(exportProgress, 'Export wird vorbereitet ...');
+        updateProgress(exportProgress, msg.preparing_export);
 
         const request = new XMLHttpRequest();
         request.open('POST', formTarget(exportForm));
@@ -186,7 +193,7 @@
         request.onprogress = (progressEvent) => {
           if (!progressEvent.lengthComputable) return;
           const percent = Math.min(99, Math.round((progressEvent.loaded / progressEvent.total) * 100));
-          updateProgress(exportProgress, 'ZIP wird übertragen ...', percent);
+          updateProgress(exportProgress, msg.transferring_zip, percent);
         };
         request.onload = async () => {
           const contentType = request.getResponseHeader('Content-Type') || '';
@@ -202,11 +209,11 @@
           link.click();
           link.remove();
           window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-          updateProgress(exportProgress, 'Export abgeschlossen', 100, 'success');
+          updateProgress(exportProgress, msg.export_done, 100, 'success');
           setBusy(exportForm, false);
         };
         request.onerror = () => {
-          updateProgress(exportProgress, 'Export fehlgeschlagen', 100, 'error');
+          updateProgress(exportProgress, msg.export_failed, 100, 'error');
           setBusy(exportForm, false);
         };
         request.send(new FormData(exportForm));
@@ -219,21 +226,21 @@
         event.preventDefault();
         if (!importForm.reportValidity()) return;
         setBusy(importForm, true);
-        updateProgress(importProgress, 'Archiv wird hochgeladen ...', 0);
+        updateProgress(importProgress, msg.uploading, 0);
 
         const request = new XMLHttpRequest();
         request.open('POST', formTarget(importForm));
         request.upload.onprogress = (progressEvent) => {
           if (!progressEvent.lengthComputable) return;
           const percent = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100));
-          updateProgress(importProgress, 'Archiv wird hochgeladen ...', percent);
+          updateProgress(importProgress, msg.uploading, percent);
         };
         request.upload.onload = () => {
-          updateProgress(importProgress, 'Archiv wird geprüft und verarbeitet ...');
+          updateProgress(importProgress, msg.processing);
         };
         request.onload = () => replacePage(request.responseText);
         request.onerror = () => {
-          updateProgress(importProgress, 'Import fehlgeschlagen', 100, 'error');
+          updateProgress(importProgress, msg.import_failed, 100, 'error');
           setBusy(importForm, false);
         };
         request.send(new FormData(importForm));

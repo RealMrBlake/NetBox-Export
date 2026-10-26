@@ -246,8 +246,8 @@ def test_existing_unique_relation_is_released_before_reassignment():
         assert imported_owner.primary_ip6 == address
         assert warnings == [
             (
-                "Eindeutige Referenz compat_tests.uniqueaddressowner.primary_ip6 wurde von "
-                f"Zielobjekt(en) {previous_owner.pk} gelöst und dem importierten Objekt neu zugeordnet."
+                "Unique reference compat_tests.uniqueaddressowner.primary_ip6 was released from target "
+                f"object(s) {previous_owner.pk} and reassigned to the imported object."
             )
         ]
     finally:
@@ -288,9 +288,9 @@ def test_natural_key_rebinds_stale_mapping_instead_of_creating_duplicate(monkeyp
         assert existing == natural
         assert warnings == [
             (
-                "Gespeicherte Zuordnung für dcim.rearport:77 wurde von Ziel-ID 999 auf "
-                f"Ziel-ID {natural.pk} korrigiert, da der Fachschlüssel "
-                f"{{'device': <Device: Device object ({device.pk})>, 'name': '3-LC'}} bereits existiert."
+                "Stored mapping for dcim.rearport:77 was corrected from target ID 999 to "
+                f"target ID {natural.pk} because the natural key "
+                f"{{'device': <Device: Device object ({device.pk})>, 'name': '3-LC'}} already exists."
             )
         ]
     finally:

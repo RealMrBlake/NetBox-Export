@@ -219,10 +219,25 @@ conflict strategy **Abort import** still aborts on existing objects.
 - Encrypted credentials of NetBox-VM-Import are only usable with an identical
   Django `SECRET_KEY`; otherwise set the password again on the target.
 
+### Language
+
+The plugin is available in English (source) and German. Switch the display
+language as usual in the user profile (**Preferences → Language**); import
+reports and error messages follow it. Translations live in
+`netbox_export/locale/de/LC_MESSAGES/`.
+
 ## Development and tests
 
 ```bash
 python -m pytest
+```
+
+After changing user-visible strings, update and compile the German catalogue:
+
+```bash
+cd netbox_export
+django-admin makemessages -l de --no-location
+msgfmt -o locale/de/LC_MESSAGES/django.mo locale/de/LC_MESSAGES/django.po
 ```
 
 ## License

@@ -34,13 +34,13 @@ def test_archive_round_trip():
 
     assert parsed.records == records()
     assert parsed.assets == {"assets/a.txt": b"data"}
-    assert parsed.warnings == ["Das Archiv ist nicht signiert."]
+    assert parsed.warnings == ["The archive is not signed."]
 
 
 def test_signed_archive_requires_matching_key():
     payload = build_archive(manifest(), records(), {}, signing_key="secret-a")
 
-    with pytest.raises(ArchiveValidationError, match="Archivsignatur"):
+    with pytest.raises(ArchiveValidationError, match="archive signature"):
         read_archive(payload, max_size=1024 * 1024, max_objects=10, signing_key="secret-b")
 
 
@@ -49,7 +49,7 @@ def test_signed_archive_without_local_key_is_not_claimed_as_verified():
 
     parsed = read_archive(payload, max_size=1024 * 1024, max_objects=10)
 
-    assert parsed.warnings == ["Das Archiv ist signiert, aber ohne konfigurierten Schlüssel nicht verifiziert."]
+    assert parsed.warnings == ["The archive is signed but was not verified because no key is configured."]
 
 
 def test_modified_object_stream_is_rejected():
@@ -63,7 +63,7 @@ def test_modified_object_stream_is_rejected():
                 content = content.replace(b"Berlin", b"Hamburg")
             target.writestr(info, content)
 
-    with pytest.raises(ArchiveValidationError, match="Prüfsumme"):
+    with pytest.raises(ArchiveValidationError, match="checksum"):
         read_archive(output.getvalue(), max_size=1024 * 1024, max_objects=10)
 
 
@@ -78,7 +78,7 @@ def test_modified_asset_is_rejected():
                 content = b"modified"
             target.writestr(info, content)
 
-    with pytest.raises(ArchiveValidationError, match="Prüfsumme der Datei"):
+    with pytest.raises(ArchiveValidationError, match="checksum of file"):
         read_archive(output.getvalue(), max_size=1024 * 1024, max_objects=10)
 
 
@@ -88,12 +88,12 @@ def test_path_traversal_is_rejected():
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr("../manifest.json", json.dumps(manifest()))
 
-    with pytest.raises(ArchiveValidationError, match="Dateipfad"):
+    with pytest.raises(ArchiveValidationError, match="file path"):
         read_archive(output.getvalue(), max_size=1024 * 1024, max_objects=10)
 
 
 def test_object_limit_is_enforced():
     payload = build_archive(manifest(), records() * 2, {})
 
-    with pytest.raises(ArchiveValidationError, match="zu viele Objekte"):
+    with pytest.raises(ArchiveValidationError, match="too many objects"):
         read_archive(payload, max_size=1024 * 1024, max_objects=1)

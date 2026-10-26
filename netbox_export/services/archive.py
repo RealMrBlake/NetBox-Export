@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from typing import BinaryIO
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django.utils.translation import gettext as _
 
 from .exceptions import ArchiveValidationError
 
@@ -54,7 +55,7 @@ def build_archive(manifest: dict, records: Iterable[dict], assets: dict[str, byt
     for path, content in assets.items():
         safe_path = _safe_member_name(path)
         if safe_path in normalized_assets:
-            raise ArchiveValidationError(f"Doppelter Dateipfad im Archiv: {safe_path}")
+            raise ArchiveValidationError(_("Duplicate file path in archive: %(path)s") % {"path": safe_path})
         normalized_assets[safe_path] = content
     assets = normalized_assets
     object_data = b"\n".join(_json_bytes(record) for record in records) + b"\n"
@@ -94,7 +95,7 @@ def build_archive(manifest: dict, records: Iterable[dict], assets: dict[str, byt
 def _safe_member_name(name: str) -> str:
     normalized = posixpath.normpath(name.replace("\\", "/"))
     if normalized.startswith(("../", "/")) or normalized in ("", ".", ".."):
-        raise ArchiveValidationError(f"Unsicherer Dateipfad im Archiv: {name}")
+        raise ArchiveValidationError(_("Unsafe file path in archive: %(path)s") % {"path": name})
     return normalized
 
 
@@ -118,52 +119,52 @@ def read_archive(
     else:
         raw = source.read(max_size + 1)
     if len(raw) > max_size:
-        raise ArchiveValidationError("Das Archiv überschreitet die konfigurierte Maximalgröße.")
+        raise ArchiveValidationError(_("The archive exceeds the configured maximum size."))
 
     try:
         archive = zipfile.ZipFile(io.BytesIO(raw))
     except zipfile.BadZipFile as exc:
-        raise ArchiveValidationError("Die hochgeladene Datei ist kein gültiges ZIP-Archiv.") from exc
+        raise ArchiveValidationError(_("The uploaded file is not a valid ZIP archive.")) from exc
 
     with archive:
         names = {}
         for info in archive.infolist():
             name = _safe_member_name(info.filename)
             if name in names:
-                raise ArchiveValidationError(f"Doppelter Dateipfad im Archiv: {name}")
+                raise ArchiveValidationError(_("Duplicate file path in archive: %(path)s") % {"path": name})
             names[name] = info
         if len(names) > max_objects * 5 + 2:
-            raise ArchiveValidationError("Das Archiv enthält zu viele Dateien.")
+            raise ArchiveValidationError(_("The archive contains too many files."))
         if MANIFEST_NAME not in names or OBJECTS_NAME not in names:
-            raise ArchiveValidationError("manifest.json oder objects.ndjson fehlt im Archiv.")
+            raise ArchiveValidationError(_("manifest.json or objects.ndjson is missing from the archive."))
         total_size = sum(info.file_size for info in names.values())
         if total_size > max_size * 4:
-            raise ArchiveValidationError("Der entpackte Archivinhalt ist zu groß.")
+            raise ArchiveValidationError(_("The extracted archive content is too large."))
         if any(info.file_size > 0 and info.compress_size * 200 < info.file_size for info in names.values()):
-            raise ArchiveValidationError("Das Archiv weist ein unzulässiges Kompressionsverhältnis auf.")
+            raise ArchiveValidationError(_("The archive has an impermissible compression ratio."))
 
         try:
             manifest = json.loads(archive.read(MANIFEST_NAME))
             object_data = archive.read(OBJECTS_NAME)
         except (KeyError, ValueError, UnicodeDecodeError) as exc:
-            raise ArchiveValidationError("Die Metadaten im Archiv sind ungültig.") from exc
+            raise ArchiveValidationError(_("The archive metadata is invalid.")) from exc
 
         if manifest.get("format") != FORMAT_NAME or manifest.get("format_version") != FORMAT_VERSION:
-            raise ArchiveValidationError("Das Archivformat oder dessen Version wird nicht unterstützt.")
+            raise ArchiveValidationError(_("The archive format or its version is not supported."))
         checksum = hashlib.sha256(object_data).hexdigest()
         if not hmac.compare_digest(checksum, str(manifest.get("objects_sha256", ""))):
-            raise ArchiveValidationError("Die Objektdatei stimmt nicht mit ihrer Prüfsumme überein.")
+            raise ArchiveValidationError(_("The object file does not match its checksum."))
 
         warnings = []
         signature = manifest.get("signature")
         if signing_key:
             expected = _signature(manifest, signing_key)
             if not signature or not hmac.compare_digest(expected, signature):
-                raise ArchiveValidationError("Die Archivsignatur ist ungültig oder fehlt.")
+                raise ArchiveValidationError(_("The archive signature is invalid or missing."))
         elif signature:
-            warnings.append("Das Archiv ist signiert, aber ohne konfigurierten Schlüssel nicht verifiziert.")
+            warnings.append(_("The archive is signed but was not verified because no key is configured."))
         else:
-            warnings.append("Das Archiv ist nicht signiert.")
+            warnings.append(_("The archive is not signed."))
 
         records = []
         try:
@@ -171,9 +172,9 @@ def read_archive(
                 if line:
                     records.append(json.loads(line))
                     if len(records) > max_objects:
-                        raise ArchiveValidationError("Das Archiv enthält zu viele Objekte.")
+                        raise ArchiveValidationError(_("The archive contains too many objects."))
         except (ValueError, UnicodeDecodeError) as exc:
-            raise ArchiveValidationError("objects.ndjson enthält ungültiges JSON.") from exc
+            raise ArchiveValidationError(_("objects.ndjson contains invalid JSON.")) from exc
 
         assets = {
             name: archive.read(name)
@@ -182,11 +183,11 @@ def read_archive(
         }
         declared_assets = manifest.get("assets_sha256", {})
         if set(declared_assets) != set(assets):
-            raise ArchiveValidationError("Die Dateiliste stimmt nicht mit dem Manifest überein.")
+            raise ArchiveValidationError(_("The file list does not match the manifest."))
         for name, content in assets.items():
             actual = hashlib.sha256(content).hexdigest()
             if not hmac.compare_digest(actual, str(declared_assets.get(name, ""))):
-                raise ArchiveValidationError(f"Die Prüfsumme der Datei {name} ist ungültig.")
+                raise ArchiveValidationError(_("The checksum of file %(name)s is invalid.") % {"name": name})
         if manifest.get("object_count") != len(records):
-            raise ArchiveValidationError("Die Objektanzahl stimmt nicht mit dem Manifest überein.")
+            raise ArchiveValidationError(_("The object count does not match the manifest."))
         return ParsedArchive(manifest=manifest, records=records, assets=assets, warnings=warnings)

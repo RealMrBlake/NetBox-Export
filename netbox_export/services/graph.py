@@ -6,6 +6,7 @@ from django.apps import apps
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
+from django.utils.translation import gettext as _
 
 from .codec import object_key
 from .exceptions import GraphLimitError
@@ -153,8 +154,10 @@ class ObjectGraph:
         object_count = len(self.members) + len(self.dependencies)
         if object_count > self.max_objects:
             raise GraphLimitError(
-                f"Der Export würde mehr als {self.max_objects} Objekte enthalten. "
-                "Bitte den Bereich verkleinern oder max_objects erhöhen."
+                _(
+                    "The export would contain more than %(max)s objects. "
+                    "Narrow the scope or increase max_objects."
+                ) % {"max": self.max_objects}
             )
 
     def add_member(self, obj) -> bool:

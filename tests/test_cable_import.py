@@ -49,7 +49,7 @@ def test_port_mapping_conflicts_are_replaced_before_save():
 
     assert deleted == [12]
     resolver.warn.assert_called_once()
-    assert "Front-/Rear-Port-Verkabelung" in resolver.warn.call_args.args[1]
+    assert "front/rear port cabling" in resolver.warn.call_args.args[1]
 
 
 def test_imported_cable_terminations_trigger_netbox_path_rebuild(monkeypatch):

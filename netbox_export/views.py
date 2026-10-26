@@ -2,6 +2,7 @@ from django.contrib.auth.mixins import UserPassesTestMixin
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils.text import slugify
+from django.utils.translation import gettext as _
 from django.views import View
 from netbox.plugins import get_plugin_config
 
@@ -25,6 +26,15 @@ class DashboardView(UserPassesTestMixin, View):
             "import_form": import_form or ImportForm(prefix="import"),
             "report": report,
             "manifest": manifest,
+            "js_messages": {
+                "preparing_export": _("Preparing export ..."),
+                "transferring_zip": _("Transferring ZIP ..."),
+                "export_done": _("Export completed"),
+                "export_failed": _("Export failed"),
+                "uploading": _("Uploading archive ..."),
+                "processing": _("Checking and processing archive ..."),
+                "import_failed": _("Import failed"),
+            },
         }
 
     def get(self, request):

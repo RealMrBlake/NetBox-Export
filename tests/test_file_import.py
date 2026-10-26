@@ -98,8 +98,8 @@ def test_oversized_image_is_resized_after_pillow_bomb_error(monkeypatch):
         assert stored_image.format == "PNG"
     assert import_warnings == [
         (
-            f"Bild für extras.imageattachment:17 wurde von 11×10 auf "
-            f"{obj.image_width}×{obj.image_height} Pixel verkleinert."
+            f"Image for extras.imageattachment:17 was downscaled from 11×10 to "
+            f"{obj.image_width}×{obj.image_height} pixels."
         )
     ]
     assert Image.MAX_IMAGE_PIXELS == 50

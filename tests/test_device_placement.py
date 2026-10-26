@@ -140,7 +140,7 @@ def test_update_releases_exact_rack_occupant_and_places_imported_device(placemen
     assert (occupant.rack, occupant.position, occupant.face) == (rack, None, None)
     assert (imported.rack, imported.position, imported.face) == (rack, Decimal("31.0"), "front")
     assert len(warnings) == 1
-    assert f"Zielgerät(e) {occupant.pk} (Existing)" in warnings[0]
+    assert f"target device(s) {occupant.pk} (Existing)" in warnings[0]
 
 
 def test_skip_keeps_occupant_and_leaves_imported_device_unpositioned(placement_schema):
@@ -165,7 +165,7 @@ def test_skip_keeps_occupant_and_leaves_imported_device_unpositioned(placement_s
     assert (occupant.rack, occupant.position, occupant.face) == (rack, Decimal("31.0"), "front")
     assert (imported.rack, imported.position, imported.face) == (rack, None, None)
     assert len(warnings) == 1
-    assert "wurde ohne Position im Rack gespeichert" in warnings[0]
+    assert "was saved without a rack position" in warnings[0]
 
 
 def test_fail_reports_rack_conflict_before_database_constraint(placement_schema):
@@ -177,7 +177,7 @@ def test_fail_reports_rack_conflict_before_database_constraint(placement_schema)
     imported = PlacementDevice.objects.create(name="Imported", device_type=device_type)
     record_id, resolved, _, resolver, compatibility, placement = placement_context(imported, rack)
 
-    with pytest.raises(ImportConflictError, match="Rackplatzkonflikt.*Rack R01"):
+    with pytest.raises(ImportConflictError, match="Rack position conflict.*Rack R01"):
         _apply_device_placements(
             [(record_id, placement)],
             resolved,
