@@ -11,6 +11,12 @@ a second NetBox instance.
 | **Python** | `>=3.12` |
 | **Repository** | <https://git.mrblake.cc/MrBlake/NetBox-Export> |
 
+## Screenshots
+
+Export and import page:
+
+![Export and import page](docs/screenshots/export.png)
+
 ## Features
 
 Supported starting points:
